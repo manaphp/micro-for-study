@@ -14,7 +14,7 @@ class FactoryDefault extends Di
             'eventsManager' => 'ManaPHP\Event\Manager',
             'alias'         => 'ManaPHP\Alias',
             'configure'     => 'ManaPHP\Configuration\Configure',
-            'invoker'       => 'ManaPHP\Invoker',
+            'invoker'       => 'ManaPHP\Controller\Invoker',
             'logger'        => 'ManaPHP\Logging\Logger\Adapter\File',
 
             'debuggerPlugin' => 'ManaPHP\Debugging\DebuggerPlugin',

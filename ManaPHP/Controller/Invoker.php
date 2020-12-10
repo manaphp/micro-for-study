@@ -1,11 +1,12 @@
 <?php
 
-namespace ManaPHP;
+namespace ManaPHP\Controller;
 
+use ManaPHP\Component;
 use ReflectionMethod;
 
 /**
- * @property-read \ManaPHP\Http\RequestInterface         $request
+ * @property-read \ManaPHP\Http\RequestInterface $request
  */
 class Invoker extends Component implements InvokerInterface
 {

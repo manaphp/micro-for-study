@@ -3,11 +3,11 @@
 namespace ManaPHP\Http;
 
 /**
- * @property-read \ManaPHP\InvokerInterface         $invoker
- * @property-read \ManaPHP\Http\RequestInterface    $request
- * @property-read \ManaPHP\Http\ResponseInterface   $response
- * @property-read \ManaPHP\Http\RouterInterface     $router
- * @property-read \ManaPHP\Http\DispatcherInterface $dispatcher
+ * @property-read \ManaPHP\Controller\InvokerInterface $invoker
+ * @property-read \ManaPHP\Http\RequestInterface       $request
+ * @property-read \ManaPHP\Http\ResponseInterface      $response
+ * @property-read \ManaPHP\Http\RouterInterface        $router
+ * @property-read \ManaPHP\Http\DispatcherInterface    $dispatcher
  */
 abstract class Controller extends \ManaPHP\Controller
 {
