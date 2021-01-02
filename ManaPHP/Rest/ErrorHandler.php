@@ -18,29 +18,11 @@ class ErrorHandler extends Component implements ErrorHandlerInterface
      */
     public function handle($throwable)
     {
-        if ($throwable instanceof Exception) {
-            $code = $throwable->getStatusCode();
-            $json = $throwable->getJson();
-
-            if ($code !== 200) {
-                $this->response->setStatus($code);
-            } elseif ($this->response->getContent() !== '') {
-                return;
-            }
-        } else {
-            $code = 500;
-            $json = ['code' => $code, 'message' => 'Internal Server Error'];
-        }
-
+        $code = $throwable instanceof Exception ? $throwable->getCode() : 500;
         if ($code >= 500) {
             $this->logger->error($throwable);
         }
 
-        if ($this->configure->debug) {
-            $json['message'] = get_class($throwable) . ': ' . $throwable->getMessage();
-            $json['exception'] = explode("\n", $throwable);
-        }
-
-        $this->response->setStatus($code)->setJsonContent(json_stringify($json, JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->response->setJsonThrowable($throwable);
     }
 }

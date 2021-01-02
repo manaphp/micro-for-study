@@ -323,7 +323,22 @@ class Router extends Component implements RouterInterface
      */
     public function getRewriteUri()
     {
-        return rtrim($this->request->get('_url', '/'), '/') ?: '/';
+        if (($url = $this->request->get('_url', '')) === '') {
+            $request_uri = $this->request->getServer('REQUEST_URI', '/');
+            $pos = strpos($request_uri, '?');
+            $url = $pos === false ? $request_uri : substr($request_uri, 0, $pos);
+        }
+
+        $url = rtrim($url, '/') ?: '/';
+        $web = $this->alias->get('@web') ?? '';
+        if ($web === '') {
+            return $url;
+        } elseif (str_starts_with($url, $web)) {
+            $url = substr($url, strlen($web));
+            return $url === '' ? '/' : $url;
+        } else {
+            return $url;
+        }
     }
 
     /**

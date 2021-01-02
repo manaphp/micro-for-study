@@ -60,9 +60,6 @@ class Swoole extends Server
             'REQUEST_SCHEME'  => 'http',
         ];
 
-        $this->alias->set('@web', '');
-        $this->alias->set('@asset', '');
-
         $options['enable_coroutine'] = MANAPHP_COROUTINE_ENABLED;
 
         if (isset($options['max_request']) && $options['max_request'] < 1) {
@@ -109,9 +106,6 @@ class Swoole extends Server
         $_server += $this->_SERVER;
 
         $_get = $request->get ?: [];
-        $request_uri = $_server['REQUEST_URI'];
-        $_get['_url'] = ($pos = strpos($request_uri, '?')) ? substr($request_uri, 0, $pos) : $request_uri;
-
         $_post = $request->post ?: [];
         $raw_body = $request->rawContent();
         $this->request->prepare($_get, $_post, $_server, $raw_body, $request->cookie ?? [], $request->files ?? []);
