@@ -3,7 +3,7 @@
 namespace ManaPHP\Controller;
 
 use ManaPHP\Component;
-use ReflectionMethod;
+use ManaPHP\Helper\Reflection;
 
 /**
  * @property-read \ManaPHP\Http\RequestInterface $request
@@ -16,24 +16,23 @@ class Invoker extends Component implements InvokerInterface
     public function __construct($options = [])
     {
         if (isset($options['validator'])) {
-            $this->_injections['validator'] = $options['validator'];
+            $this->injections['validator'] = $options['validator'];
         }
     }
 
     /**
-     * @param object $instance
-     * @param string $method
+     * @param \ManaPHP\Controller $controller
+     * @param string              $method
      *
      * @return array
      */
-    public function buildArgs($instance, $method)
+    public function buildArgs($controller, $method)
     {
         $args = [];
 
-        $di = $this->_di;
+        $container = $this->container;
 
-        $name_of_id = null;
-        $parameters = (new ReflectionMethod($instance, $method))->getParameters();
+        $parameters = Reflection::reflectMethod($controller, $method)->getParameters();
         foreach ($parameters as $parameter) {
             $name = $parameter->getName();
             $value = null;
@@ -46,27 +45,21 @@ class Invoker extends Component implements InvokerInterface
             }
 
             if ($className = ($c = $parameter->getClass()) ? $c->getName() : null) {
-                $value = $di->has($name) ? $di->getShared($name) : $di->getShared($className);
+                $value = $container->has($name) ? $container->getShared($name) : $container->getShared($className);
             } elseif (str_ends_with($name, 'Service')) {
-                $value = $di->getShared($name);
+                $value = $container->getShared($name);
             } elseif ($this->request->has($name)) {
                 $value = $this->request->get($name, $type === 'array' ? [] : '');
             } elseif ($parameter->isDefaultValueAvailable()) {
                 $value = $parameter->getDefaultValue();
-            } elseif (count($parameters) === 1) {
+            } elseif (count($parameters) === 1 && ($name === 'id' || str_ends_with($name, '_id'))) {
                 $value = $this->request->getId($name);
-            } elseif ($this->request->has('id')) {
-                if ($name_of_id === null) {
-                    $name_of_id = $name;
-                    $value = $this->request->get('id');
-                } elseif ($name_of_id !== '') {
-                    $name_of_id = '';
-                }
             } elseif ($type === 'NULL') {
                 $value = null;
             }
 
             if ($value === null && $type !== 'NULL') {
+                $missing[] = $name;
                 continue;
             }
 
@@ -98,15 +91,15 @@ class Invoker extends Component implements InvokerInterface
     }
 
     /**
-     * @param object $instance
-     * @param string $method
+     * @param \ManaPHP\Controller $controller
+     * @param string              $method
      *
      * @return mixed
      */
-    public function invoke($instance, $method)
+    public function invoke($controller, $method)
     {
-        $args = $this->buildArgs($instance, $method);
+        $args = $this->self->buildArgs($controller, $method);
 
-        return $instance->$method(...$args);
+        return $controller->$method(...$args);
     }
 }

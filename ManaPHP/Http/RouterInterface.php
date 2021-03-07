@@ -38,11 +38,11 @@ interface RouterInterface
      *
      * @param string       $pattern
      * @param string|array $paths
-     * @param string       $method
+     * @param string|array $methods
      *
      * @return \ManaPHP\Http\Router\RouteInterface
      */
-    public function add($pattern, $paths = null, $method = null);
+    public function add($pattern, $paths = null, $methods = null);
 
     /**
      * Adds a route to the router that only match if the HTTP method is GET
@@ -95,16 +95,6 @@ interface RouterInterface
     public function addDelete($pattern, $paths = null);
 
     /**
-     * Add a route to the router that only match if the HTTP method is OPTIONS
-     *
-     * @param string       $pattern
-     * @param string|array $paths
-     *
-     * @return \ManaPHP\Http\Router\RouteInterface
-     */
-    public function addOptions($pattern = '{all:.*}', $paths = null);
-
-    /**
      * Adds a route to the router that only match if the HTTP method is HEAD
      *
      * @param string       $pattern
@@ -128,20 +118,9 @@ interface RouterInterface
      * @param string $uri
      * @param string $method
      *
-     * @return \ManaPHP\Http\RouterContext|false
+     * @return bool
      */
     public function match($uri = null, $method = null);
-
-    /**
-     * Handles routing information received from the rewrite engine
-     *
-     * @param string $uri
-     * @param string $method
-     *
-     * @return mixed
-     * @throws \ManaPHP\Exception\AbortException
-     */
-    public function dispatch($uri = null, $method = null);
 
     /**
      * Get rewrite info.

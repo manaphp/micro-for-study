@@ -2,8 +2,8 @@
 
 return [
     'id'         => 'api',
-    'env'        => 'prod',
-    'debug'      => false,
+    'env'        => 'dev',
+    'debug'      => true,
     'version'    => '1.1.1',
     'timezone'   => 'PRC',
     'params'     => [],

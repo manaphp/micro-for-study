@@ -1,8 +1,8 @@
 <?php
 
-namespace ManaPHP;
+namespace ManaPHP\Di;
 
-interface DiInterface
+interface ContainerInterface
 {
     /**
      * Registers a component in the component container
@@ -62,7 +62,7 @@ interface DiInterface
      *
      * @return mixed
      */
-    public function get($name, $parameters = []);
+    public function getNew($name, $parameters = []);
 
     /**
      * Resolves a shared component based on their configuration

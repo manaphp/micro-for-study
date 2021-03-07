@@ -56,21 +56,25 @@ class Str
     }
 
     /**
+     * snake_case
+     *
      * @param string $str
      *
      * @return string
      */
-    public static function underscore($str)
+    public static function snakelize($str)
     {
         return strtolower(preg_replace('/[A-Z]/', '_$0', lcfirst($str)));
     }
 
     /**
+     * PascalCase
+     *
      * @param string $str
      *
      * @return string
      */
-    public static function camelize($str)
+    public static function pascalize($str)
     {
         if (str_contains($str, '_')) {
             if (PHP_VERSION_ID >= 50516) {
@@ -146,12 +150,40 @@ class Str
     }
 
     /**
+     * camelCase
+     *
      * @param string $str
      *
      * @return string
      */
-    public static function variablize($str)
+    public static function camelize($str)
     {
-        return lcfirst(self::camelize($str));
+        return lcfirst(self::pascalize($str));
+    }
+
+    /**
+     * @param string $str
+     *
+     * @return string
+     */
+    public static function singular($str)
+    {
+        if ($str[strlen($str) - 1] === 's') {
+            //https://github.com/UlvHare/PHPixie-demo/blob/d000d8f11e6ab7c522feeb4457da5a802ca3e0bc/vendor/phpixie/orm/src/PHPixie/ORM/Configs/Inflector.php
+            if (preg_match('#^(.*?us)$|(.*?[sxz])es$|(.*?[^aeioudgkprt]h)es$#', $str, $match)) {
+                foreach ($match as $i => $word) {
+                    if ($i !== 0 && $word !== '') {
+                        return $word;
+                    }
+                }
+                return $str;
+            } elseif (preg_match('#^(.*?[^aeiou])ies$#', $str, $match)) {
+                return $match[1] . 'y';
+            } else {
+                return substr($str, 0, -1);
+            }
+        } else {
+            return $str;
+        }
     }
 }

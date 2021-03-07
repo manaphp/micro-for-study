@@ -5,7 +5,6 @@ namespace ManaPHP\Http;
 use ManaPHP\Component;
 use ManaPHP\Exception\MisuseException;
 use ManaPHP\Helper\Str;
-use ManaPHP\Http\Router\NotFoundRouteException;
 use ManaPHP\Http\Router\Route;
 
 /** @noinspection PhpMultipleClassesDeclarationsInOneFile */
@@ -39,41 +38,41 @@ class RouterContext
 }
 
 /**
- * @property-read \ManaPHP\Http\RequestInterface    $request
- * @property-read \ManaPHP\Http\DispatcherInterface $dispatcher
- * @property-read \ManaPHP\Http\RouterContext       $_context
+ * @property-read \ManaPHP\AliasInterface        $alias
+ * @property-read \ManaPHP\Http\RequestInterface $request
+ * @property-read \ManaPHP\Http\RouterContext    $context
  */
 class Router extends Component implements RouterInterface
 {
     /**
      * @var bool
      */
-    protected $_case_sensitive = true;
+    protected $case_sensitive = true;
 
     /**
      * @var string
      */
-    protected $_prefix = '';
+    protected $prefix = '';
 
     /**
      * @var array
      */
-    protected $_areas = [];
+    protected $areas = [];
 
     /**
      * @var \ManaPHP\Http\Router\RouteInterface[]
      */
-    protected $_default_routes;
+    protected $defaults = [];
 
     /**
      * @var \ManaPHP\Http\Router\RouteInterface[][]
      */
-    protected $_simple_routes = [];
+    protected $simples = [];
 
     /**
      * @var \ManaPHP\Http\Router\RouteInterface[]
      */
-    protected $_regex_routes = [];
+    protected $regexes = [];
 
     /**
      * @param bool $useDefaultRoutes
@@ -81,7 +80,7 @@ class Router extends Component implements RouterInterface
     public function __construct($useDefaultRoutes = true)
     {
         if ($useDefaultRoutes) {
-            $this->_default_routes = [
+            $this->defaults = [
                 new Route('/(?:{controller}(?:/{action:\d[-\w]*$|[a-zA-Z]\w*}(?:/{params})?)?)?')
             ];
         }
@@ -92,7 +91,7 @@ class Router extends Component implements RouterInterface
      */
     public function isCaseSensitive()
     {
-        return $this->_case_sensitive;
+        return $this->case_sensitive;
     }
 
     /**
@@ -102,7 +101,7 @@ class Router extends Component implements RouterInterface
      */
     public function setPrefix($prefix)
     {
-        $this->_prefix = $prefix;
+        $this->prefix = $prefix;
 
         return $this;
     }
@@ -112,7 +111,7 @@ class Router extends Component implements RouterInterface
      */
     public function getPrefix()
     {
-        return $this->_prefix;
+        return $this->prefix;
     }
 
     /**
@@ -132,7 +131,7 @@ class Router extends Component implements RouterInterface
             }
         }
 
-        $this->_areas = $areas;
+        $this->areas = $areas;
 
         return $this;
     }
@@ -142,7 +141,7 @@ class Router extends Component implements RouterInterface
      */
     public function getAreas()
     {
-        return $this->_areas;
+        return $this->areas;
     }
 
     /**
@@ -150,21 +149,17 @@ class Router extends Component implements RouterInterface
      *
      * @param string       $pattern
      * @param string|array $paths
-     * @param string       $method
+     * @param string|array $methods
      *
      * @return \ManaPHP\Http\Router\RouteInterface
      */
-    protected function _addRoute($pattern, $paths = null, $method = null)
+    protected function addRoute($pattern, $paths = null, $methods = null)
     {
-        if (str_contains($pattern, '/:')) {
-            $pattern = preg_replace('#/:(\w+)#', '/{\1}', $pattern);
-        }
-
-        $route = new Route($pattern, $paths, $method, $this->_case_sensitive);
-        if ($method !== 'REST' && !str_contains($pattern, '{')) {
-            $this->_simple_routes[$method][$pattern] = $route;
+        $route = new Route($pattern, $paths, $methods, $this->case_sensitive);
+        if (!is_array($methods) && strpbrk($pattern, ':{') === false) {
+            $this->simples[$methods][$pattern] = $route;
         } else {
-            $this->_regex_routes[] = $route;
+            $this->regexes[] = $route;
         }
 
         return $route;
@@ -175,19 +170,13 @@ class Router extends Component implements RouterInterface
      *
      * @param string       $pattern
      * @param string|array $paths
-     * @param string|array $method
+     * @param string|array $methods
      *
      * @return \ManaPHP\Http\Router\RouteInterface
      */
-    public function add($pattern, $paths = null, $method = null)
+    public function add($pattern, $paths = null, $methods = null)
     {
-        if ($method === null && is_string($paths) && str_contains($paths, '\\')) {
-            if (!str_contains($pattern, '{action}') && !str_contains($pattern, '/:action')) {
-                $pattern = rtrim($pattern, '/') . '(?:/{action:\d[-\w]*$|[a-zA-Z]\w*}(?:/{params})?)?';
-            }
-        }
-
-        return $this->_addRoute($pattern, $paths, $method);
+        return $this->addRoute($pattern, $paths, $methods);
     }
 
     /**
@@ -200,7 +189,7 @@ class Router extends Component implements RouterInterface
      */
     public function addGet($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'GET');
+        return $this->addRoute($pattern, $paths, 'GET');
     }
 
     /**
@@ -213,7 +202,7 @@ class Router extends Component implements RouterInterface
      */
     public function addPost($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'POST');
+        return $this->addRoute($pattern, $paths, 'POST');
     }
 
     /**
@@ -226,7 +215,7 @@ class Router extends Component implements RouterInterface
      */
     public function addPut($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'PUT');
+        return $this->addRoute($pattern, $paths, 'PUT');
     }
 
     /**
@@ -239,7 +228,7 @@ class Router extends Component implements RouterInterface
      */
     public function addPatch($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'PATCH');
+        return $this->addRoute($pattern, $paths, 'PATCH');
     }
 
     /**
@@ -252,20 +241,7 @@ class Router extends Component implements RouterInterface
      */
     public function addDelete($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'DELETE');
-    }
-
-    /**
-     * Add a route to the router that only match if the HTTP method is OPTIONS
-     *
-     * @param string       $pattern
-     * @param string|array $paths
-     *
-     * @return \ManaPHP\Http\Router\RouteInterface
-     */
-    public function addOptions($pattern = '{all:.*}', $paths = null)
-    {
-        return $this->_addRoute($pattern ?: '{all:.*}', $paths, 'OPTIONS');
+        return $this->addRoute($pattern, $paths, 'DELETE');
     }
 
     /**
@@ -278,7 +254,7 @@ class Router extends Component implements RouterInterface
      */
     public function addHead($pattern, $paths = null)
     {
-        return $this->_addRoute($pattern, $paths, 'HEAD');
+        return $this->addRoute($pattern, $paths, 'HEAD');
     }
 
     /**
@@ -289,31 +265,20 @@ class Router extends Component implements RouterInterface
      */
     public function addRest($pattern, $controller = null)
     {
+        $pattern .= '(/{params:[-\w]+})?';
+
         if ($controller === null) {
+            if (str_contains($pattern, '/:controller')) {
+                return $this->addRoute($pattern, null, 'REST');
+            }
+
             if (!preg_match('#/(\w+)$#', $pattern, $match)) {
                 throw new MisuseException('must provide paths');
             }
-
-            $str = $match[1];
-            if ($str[strlen($str) - 1] === 's') {
-                //https://github.com/UlvHare/PHPixie-demo/blob/d000d8f11e6ab7c522feeb4457da5a802ca3e0bc/vendor/phpixie/orm/src/PHPixie/ORM/Configs/Inflector.php
-                if (preg_match('#^(.*?us)$|(.*?[sxz])es$|(.*?[^aeioudgkprt]h)es$#', $str, $match)) {
-                    foreach ($match as $i => $word) {
-                        if ($i !== 0 && $word !== '') {
-                            $controller = $word;
-                        }
-                    }
-                } elseif (preg_match('#^(.*?[^aeiou])ies$#', $str, $match)) {
-                    $controller = $match[1] . 'y';
-                } else {
-                    $controller = substr($str, 0, -1);
-                }
-            } else {
-                $controller = $str;
-            }
+            $controller = Str::singular($match[1]);
         }
 
-        return $this->_addRoute($pattern, $controller, 'REST');
+        return $this->addRoute($pattern, $controller, 'REST');
     }
 
     /**
@@ -347,22 +312,22 @@ class Router extends Component implements RouterInterface
      *
      * @return array|false
      */
-    protected function _matchDefaultRoutes($uri, $method)
+    protected function matchDefaultRoutes($uri, $method)
     {
         $handledUri = $uri;
 
         $area = null;
-        if ($handledUri !== '/' && $this->_areas) {
+        if ($handledUri !== '/' && $this->areas) {
             if (($pos = strpos($handledUri, '/', 1)) !== false) {
-                $area = Str::camelize(substr($handledUri, 1, $pos - 1));
-                if (in_array($area, $this->_areas, true)) {
+                $area = Str::pascalize(substr($handledUri, 1, $pos - 1));
+                if (in_array($area, $this->areas, true)) {
                     $handledUri = substr($handledUri, $pos);
                 } else {
                     $area = null;
                 }
             } else {
-                $area = Str::camelize(substr($handledUri, 1));
-                if (in_array($area, $this->_areas, true)) {
+                $area = Str::pascalize(substr($handledUri, 1));
+                if (in_array($area, $this->areas, true)) {
                     $handledUri = '/';
                 } else {
                     $area = null;
@@ -372,8 +337,8 @@ class Router extends Component implements RouterInterface
 
         $handledUri = $handledUri === '/' ? '/' : rtrim($handledUri, '/');
 
-        for ($i = count($this->_default_routes) - 1; $i >= 0; $i--) {
-            $route = $this->_default_routes[$i];
+        for ($i = count($this->defaults) - 1; $i >= 0; $i--) {
+            $route = $this->defaults[$i];
             if (($parts = $route->match($handledUri, $method)) !== false) {
                 if ($area !== null) {
                     $parts['area'] = $area;
@@ -391,11 +356,11 @@ class Router extends Component implements RouterInterface
      * @param string $uri
      * @param string $method
      *
-     * @return \ManaPHP\Http\RouterContext|false
+     * @return bool
      */
     public function match($uri = null, $method = null)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         $this->fireEvent('request:routing');
 
@@ -411,9 +376,9 @@ class Router extends Component implements RouterInterface
 
         $context->matched = false;
 
-        if ($this->_prefix) {
-            if (str_starts_with($uri, $this->_prefix)) {
-                $handledUri = substr($uri, strlen($this->_prefix)) ?: '/';
+        if ($this->prefix) {
+            if (str_starts_with($uri, $this->prefix)) {
+                $handledUri = substr($uri, strlen($this->prefix)) ?: '/';
             } else {
                 $handledUri = false;
             }
@@ -422,7 +387,7 @@ class Router extends Component implements RouterInterface
         }
 
         $area = null;
-        $routes = $this->_simple_routes;
+        $routes = $this->simples;
         if ($handledUri === false) {
             $parts = false;
         } elseif (isset($routes[$method][$handledUri])) {
@@ -431,18 +396,18 @@ class Router extends Component implements RouterInterface
             $parts = $routes[''][$handledUri]->match($handledUri, $method);
         } else {
             $parts = false;
-            $routes = $this->_regex_routes;
+            $routes = $this->regexes;
             for ($i = count($routes) - 1; $i >= 0; $i--) {
                 $route = $routes[$i];
                 if (($parts = $route->match($handledUri, $method)) !== false) {
-                    if ($handledUri !== '/' && $this->_areas) {
+                    if ($handledUri !== '/' && $this->areas) {
                         if (($pos = strpos($handledUri, '/', 1)) === false) {
-                            $area = Str::camelize(substr($handledUri, 1));
+                            $area = Str::pascalize(substr($handledUri, 1));
                         } else {
-                            $area = Str::camelize(substr($handledUri, 1, $pos - 1));
+                            $area = Str::pascalize(substr($handledUri, 1, $pos - 1));
                         }
 
-                        if (!in_array($area, $this->_areas, true)) {
+                        if (!in_array($area, $this->areas, true)) {
                             $area = null;
                         }
                     }
@@ -451,7 +416,7 @@ class Router extends Component implements RouterInterface
             }
 
             if ($parts === false) {
-                $parts = $this->_matchDefaultRoutes($handledUri, $method);
+                $parts = $this->matchDefaultRoutes($handledUri, $method);
             }
         }
 
@@ -475,24 +440,7 @@ class Router extends Component implements RouterInterface
 
         $this->fireEvent('request:routed');
 
-        return $context;
-    }
-
-    /**
-     * Handles routing information received from the rewrite engine
-     *
-     * @param string $uri
-     * @param string $method
-     *
-     * @return mixed
-     */
-    public function dispatch($uri = null, $method = null)
-    {
-        if (!$router_context = $this->match($uri, $method)) {
-            throw new NotFoundRouteException(['router does not have matched route for `%s`', $this->getRewriteUri()]);
-        }
-
-        return $this->dispatcher->dispatch($router_context);
+        return $context->matched;
     }
 
     /**
@@ -500,7 +448,7 @@ class Router extends Component implements RouterInterface
      */
     public function getArea()
     {
-        return $this->_context->area;
+        return $this->context->area;
     }
 
     /**
@@ -510,7 +458,7 @@ class Router extends Component implements RouterInterface
      */
     public function setArea($area)
     {
-        $this->_context->area = $area;
+        $this->context->area = $area;
 
         return $this;
     }
@@ -522,7 +470,7 @@ class Router extends Component implements RouterInterface
      */
     public function getController()
     {
-        return $this->_context->controller;
+        return $this->context->controller;
     }
 
     /**
@@ -532,7 +480,7 @@ class Router extends Component implements RouterInterface
      */
     public function setController($controller)
     {
-        $this->_context->controller = $controller;
+        $this->context->controller = $controller;
 
         return $this;
     }
@@ -544,7 +492,7 @@ class Router extends Component implements RouterInterface
      */
     public function getAction()
     {
-        return $this->_context->action;
+        return $this->context->action;
     }
 
     /**
@@ -554,7 +502,7 @@ class Router extends Component implements RouterInterface
      */
     public function setAction($action)
     {
-        $this->_context->action = $action;
+        $this->context->action = $action;
 
         return $this;
     }
@@ -566,7 +514,7 @@ class Router extends Component implements RouterInterface
      */
     public function getParams()
     {
-        return $this->_context->params;
+        return $this->context->params;
     }
 
     /**
@@ -576,7 +524,7 @@ class Router extends Component implements RouterInterface
      */
     public function setParams($params)
     {
-        $this->_context->params = $params;
+        $this->context->params = $params;
 
         return $this;
     }
@@ -588,7 +536,7 @@ class Router extends Component implements RouterInterface
      */
     public function wasMatched()
     {
-        return $this->_context->matched;
+        return $this->context->matched;
     }
 
     /**
@@ -598,7 +546,7 @@ class Router extends Component implements RouterInterface
      */
     public function setMatched($matched)
     {
-        $this->_context->matched = $matched;
+        $this->context->matched = $matched;
     }
 
     /**
@@ -609,7 +557,7 @@ class Router extends Component implements RouterInterface
      */
     public function createUrl($args, $scheme = false)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if (is_string($args)) {
             if (($pos = strpos($args, '?')) !== false) {
@@ -646,7 +594,7 @@ class Router extends Component implements RouterInterface
             $ca = substr($ca, 0, $pos);
         }
 
-        $url = $this->alias->get('@web') . $this->_prefix . '/' . lcfirst($ca);
+        $url = $this->alias->get('@web') . $this->prefix . '/' . lcfirst($ca);
         if ($url !== '/') {
             $url = rtrim($url, '/');
         }

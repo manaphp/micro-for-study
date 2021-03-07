@@ -7,8 +7,16 @@ use ManaPHP\Exception\InvalidValueException;
 use ManaPHP\Exception\NotSupportedException;
 use ManaPHP\Helper\Arr;
 
+/**
+ * @property-read \ManaPHP\AliasInterface $alias
+ */
 class Configure extends Component implements ConfigureInterface
 {
+    /**
+     * @var array
+     */
+    protected $config;
+
     /**
      * @var string
      */
@@ -92,9 +100,9 @@ class Configure extends Component implements ConfigureInterface
     public function load($file = '@config/app.php')
     {
         /** @noinspection PhpIncludeInspection */
-        $data = require $this->alias->resolve($file);
+        $this->config = require $this->alias->resolve($file);
 
-        foreach ((array)$data as $field => $value) {
+        foreach ((array)$this->config as $field => $value) {
             if (!property_exists($this, $field)) {
                 throw new NotSupportedException(['`%s` must be a public property of `configure` component', $field]);
             }
@@ -102,7 +110,27 @@ class Configure extends Component implements ConfigureInterface
             $this->$field = $value;
         }
 
+        if (defined('APP_ID')) {
+            $this->id = APP_ID;
+        } else {
+            define('APP_ID', $this->id);
+        }
+
+        if (defined('APP_DEBUG')) {
+            $this->debug = APP_DEBUG;
+        } else {
+            define('APP_DEBUG', $this->debug);
+        }
+
         return $this;
+    }
+
+    /**
+     * @return array
+     */
+    public function getConfig()
+    {
+        return $this->config;
     }
 
     /**
@@ -129,11 +157,11 @@ class Configure extends Component implements ConfigureInterface
      * @param string $name
      * @param mixed  $definition
      *
-     * @return \ManaPHP\DiInterface
+     * @return \ManaPHP\Di\ContainerInterface
      */
     public function setShared($name, $definition)
     {
-        return $this->_di->setShared($name, $definition);
+        return $this->container->setShared($name, $definition);
     }
 
     /**
@@ -143,7 +171,7 @@ class Configure extends Component implements ConfigureInterface
      */
     public function getDefinitions($pattern = null)
     {
-        return $this->_di->getDefinitions($pattern);
+        return $this->container->getDefinitions($pattern);
     }
 
     /**
@@ -303,19 +331,27 @@ class Configure extends Component implements ConfigureInterface
                 foreach ($this->appGlob('Areas/*/Listeners/?*Listener.php') as $item) {
                     $item = str_replace($this->alias->get('@app'), 'App', $item);
                     $item = substr(str_replace('/', '\\', $item), 0, -4);
-                    $this->eventsManager->addListener($item);
+                    $this->eventManager->addListener($item);
                 }
 
                 foreach ($this->appGlob('Listeners/?*Listener.php') as $item) {
                     $item = str_replace($this->alias->get('@app'), 'App', $item);
                     $item = substr(str_replace('/', '\\', $item), 0, -4);
-                    $this->eventsManager->addListener($item);
+                    $this->eventManager->addListener($item);
                 }
             } else {
-                $this->eventsManager->addListener($listener);
+                $this->eventManager->addListener($listener);
             }
         }
 
         return $this;
+    }
+
+    public function dump()
+    {
+        $data = parent::dump();
+        unset($data['config']);
+
+        return $data;
     }
 }

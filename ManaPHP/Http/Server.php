@@ -5,24 +5,25 @@ namespace ManaPHP\Http;
 use ManaPHP\Component;
 
 /**
- * @property-read \ManaPHP\Http\RequestInterface $request
+ * @property-read \ManaPHP\Http\RequestInterface  $request
+ * @property-read \ManaPHP\Http\ResponseInterface $response
  */
 abstract class Server extends Component implements ServerInterface
 {
     /**
      * @var bool
      */
-    protected $_use_globals = false;
+    protected $use_globals = false;
 
     /**
      * @var string
      */
-    protected $_host = '0.0.0.0';
+    protected $host = '0.0.0.0';
 
     /**
      * @var int
      */
-    protected $_port = 9501;
+    protected $port = 9501;
 
     /**
      * @param array $options
@@ -30,15 +31,15 @@ abstract class Server extends Component implements ServerInterface
     public function __construct($options = [])
     {
         if (isset($options['use_globals'])) {
-            $this->_use_globals = (bool)$options['use_globals'];
+            $this->use_globals = (bool)$options['use_globals'];
         }
 
         if (isset($options['host'])) {
-            $this->_host = $options['host'];
+            $this->host = $options['host'];
         }
 
         if (isset($options['port'])) {
-            $this->_port = (int)$options['port'];
+            $this->port = (int)$options['port'];
         }
     }
 }

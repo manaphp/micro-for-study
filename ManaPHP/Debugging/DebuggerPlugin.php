@@ -10,6 +10,8 @@ use ManaPHP\Helper\Str;
 use ManaPHP\Logging\Logger;
 use ManaPHP\Plugin;
 use ManaPHP\Version;
+use ArrayObject;
+use ManaPHP\Helper\Reflection;
 
 /** @noinspection PhpMultipleClassesDeclarationsInOneFile */
 
@@ -62,34 +64,46 @@ class DebuggerPluginContext
 }
 
 /**
- * @property-read \ManaPHP\Debugging\DebuggerPluginContext $_context
+ * @property-read \ManaPHP\Configuration\Configure         $configure
+ * @property-read \ManaPHP\Logging\LoggerInterface         $logger
+ * @property-read \ManaPHP\Http\RequestInterface           $request
+ * @property-read \ManaPHP\Http\ResponseInterface          $response
+ * @property-read \ManaPHP\Http\DispatcherInterface        $dispatcher
+ * @property-read \ManaPHP\Http\RouterInterface            $router
+ * @property-read \Redis                                   $redisCache
+ * @property-read \ManaPHP\Debugging\DebuggerPluginContext $context
  */
 class DebuggerPlugin extends Plugin
 {
     /**
      * @var bool
      */
-    protected $_enabled;
+    protected $enabled = true;
 
     /**
      * @var int
      */
-    protected $_ttl = 300;
+    protected $ttl = 3600;
 
     /**
      * @var string
      */
-    protected $_prefix;
+    protected $prefix;
 
     /**
      * @var string
      */
-    protected $_template = '@manaphp/Debugging/DebuggerPlugin/Template.html';
+    protected $template = '@manaphp/Debugging/DebuggerPlugin/Template.html';
 
     /**
      * @var bool
      */
-    protected $_broadcast = true;
+    protected $broadcast = true;
+
+    /**
+     * @var bool
+     */
+    protected $tail = true;
 
     /**
      * @param array $options
@@ -97,41 +111,53 @@ class DebuggerPlugin extends Plugin
     public function __construct($options = [])
     {
         if (isset($options['redisCache'])) {
-            $this->_injections['redisCache'] = $options['redisCache'];
+            $this->injections['redisCache'] = $options['redisCache'];
         }
 
         if (MANAPHP_CLI) {
-            $this->_enabled = false;
+            $this->enabled = false;
         } elseif (isset($options['enabled'])) {
-            $this->_enabled = (bool)$options['enabled'];
+            $this->enabled = (bool)$options['enabled'];
         } elseif (!in_array($this->configure->env, ['dev', 'test'], true)) {
-            $this->_enabled = false;
+            $this->enabled = false;
         }
 
         if (isset($options['ttl'])) {
-            $this->_ttl = (int)$options['ttl'];
+            $this->ttl = (int)$options['ttl'];
         }
 
         if (!class_exists('Redis')) {
-            $this->_ttl = 0;
+            $this->ttl = 0;
         }
 
-        $this->_prefix = $options['prefix'] ?? "cache:{$this->configure->id}:debuggerPlugin:";
+        $this->prefix = $options['prefix'] ?? sprintf("cache:%s:debuggerPlugin:", APP_ID);
 
         if (isset($options['template'])) {
-            $this->_template = $options['template'];
+            $this->template = $options['template'];
         }
 
         if (isset($options['broadcast'])) {
-            $this->_broadcast = (bool)$options['broadcast'];
+            $this->broadcast = (bool)$options['broadcast'];
         }
 
-        if ($this->_enabled !== false) {
+        if (isset($options['tail'])) {
+            $this->tail = (bool)$options['tail'];
+        }
+
+        if ($this->enabled) {
             $this->peekEvent('*', [$this, 'onEvent']);
 
+            $this->peekEvent('db', [$this, 'onDb']);
+            $this->peekEvent('mongodb', [$this, 'onMongodb']);
+
+            $this->attachEvent('renderer:rendering', [$this, 'onRendererRendering']);
             $this->attachEvent('logger:log', [$this, 'onLoggerLog']);
             $this->attachEvent('request:begin', [$this, 'onRequestBegin']);
             $this->attachEvent('request:end', [$this, 'onRequestEnd']);
+
+            if ($this->tail) {
+                $this->attachEvent('response:stringify', [$this, 'onResponseStringify']);
+            }
         }
     }
 
@@ -140,7 +166,7 @@ class DebuggerPlugin extends Plugin
      *
      * @return string|false
      */
-    protected function _readData($key)
+    protected function readData($key)
     {
         $file = "@data/debuggerPlugin/{$key}.zip";
         $content = LocalFS::fileExists($file) ? LocalFS::fileGet($file) : false;
@@ -155,7 +181,7 @@ class DebuggerPlugin extends Plugin
      * @return void
      * @throws \ManaPHP\Exception\JsonException
      */
-    protected function _writeData($key, $data)
+    protected function writeData($key, $data)
     {
         $content = gzencode(json_stringify($data, JSON_PARTIAL_OUTPUT_ON_ERROR));
         LocalFS::filePut("@data/debuggerPlugin/{$key}.zip", $content);
@@ -166,16 +192,16 @@ class DebuggerPlugin extends Plugin
      */
     public function onRequestBegin()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if (($debugger = $this->request->get('__debuggerPlugin', ''))
             && preg_match('#^([\w/]+)\.(html|json|txt|raw)$#', $debugger, $match)
         ) {
             $context->enabled = false;
-            if (($data = $this->_readData($match[1])) !== false) {
+            if (($data = $this->self->readData($match[1])) !== false) {
                 $ext = $match[2];
                 if ($ext === 'html') {
-                    $this->response->setContent(strtr(LocalFS::fileGet($this->_template), ['DEBUGGER_DATA' => $data]));
+                    $this->response->setContent(strtr(LocalFS::fileGet($this->template), ['DEBUGGER_DATA' => $data]));
                 } elseif ($ext === 'txt') {
                     $this->response->setContent(json_stringify(json_parse($data), JSON_PRETTY_PRINT))
                         ->setContentType('text/plain;charset=UTF-8');
@@ -199,7 +225,7 @@ class DebuggerPlugin extends Plugin
         if ($context->enabled) {
             $url = $this->router->createUrl("/?__debuggerPlugin={$context->key}.html", true);
             $this->response->setHeader('X-Debugger-Link', $url);
-            $this->logger->info('debugger-link: `' . $url . '`', 'debugger.link');
+            $this->logger->info($url, 'debugger.link');
         }
     }
 
@@ -208,10 +234,18 @@ class DebuggerPlugin extends Plugin
      */
     public function onRequestEnd()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($context->enabled) {
-            $this->_writeData($context->key, $this->_getData());
+            $this->self->writeData($context->key, $this->self->getData());
+        }
+    }
+
+    public function onResponseStringify()
+    {
+        if (is_array($content = $this->response->getContent())) {
+            $content['debuggerPlugin'] = $this->response->getHeader('X-Debugger-Link');
+            $this->response->setContent($content);
         }
     }
 
@@ -222,7 +256,23 @@ class DebuggerPlugin extends Plugin
      */
     public function onEvent(EventArgs $eventArgs)
     {
-        $this->_context->events[] = $eventArgs->event;
+        $event['event'] = $eventArgs->event;
+        $event['source'] = Reflection::getClass($eventArgs->source);
+
+        $data = $eventArgs->data;
+        if ($data === null) {
+            $event['data'] = null;
+        } elseif (is_scalar($data)) {
+            $event['data'] = gettype($data);
+        } elseif ($data instanceof ArrayObject) {
+            $event['data'] = array_keys($data->getArrayCopy());
+        } elseif (is_object($data)) {
+            $event['data'] = Reflection::getClass($data);
+        } else {
+            $event['data'] = '???';
+        }
+
+        $this->context->events[] = $event;
     }
 
     /**
@@ -232,10 +282,10 @@ class DebuggerPlugin extends Plugin
      */
     public function onLoggerLog(EventArgs $eventArgs)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         /** @var \ManaPHP\Logging\Logger\Log $log */
-        $log = $eventArgs->data;
+        $log = $eventArgs->data['log'];
         $ms = sprintf('.%03d', ($log->timestamp - (int)$log->timestamp) * 1000);
         $context->log[] = [
             'time'     => date('H:i:s', $log->timestamp) . $ms,
@@ -250,42 +300,44 @@ class DebuggerPlugin extends Plugin
     /**
      * @return array
      */
-    protected function _getBasic()
+    protected function getBasic()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         $loaded_extensions = get_loaded_extensions();
         sort($loaded_extensions, SORT_STRING | SORT_FLAG_CASE);
         $memory_usage = (int)(memory_get_usage(true) / 1024) . 'k/' . (int)(memory_get_peak_usage(true) / 1024) . 'k';
 
         return [
-            'mvc'               => $this->router->getController() . '::' . $this->router->getAction(),
-            'request_method'    => $this->request->getMethod(),
-            'request_url'       => $this->request->getUrl(),
-            'query_count'       => $context->sql_count,
-            'execute_time'      => $this->request->getElapsedTime(),
-            'memory_usage'      => $memory_usage,
-            'system_time'       => date('Y-m-d H:i:s'),
-            'server_ip'         => $this->request->getServer('SERVER_ADDR'),
-            'client_ip'         => $this->request->getClientIp(),
-            'server_software'   => $this->request->getServer('SERVER_SOFTWARE'),
-            'manaphp_version'   => Version::get(),
-            'php_version'       => PHP_VERSION,
-            'sapi'              => PHP_SAPI,
-            'loaded_ini'        => php_ini_loaded_file(),
-            'loaded_extensions' => implode(', ', $loaded_extensions)
+            'mvc'                => $this->router->getController() . '::' . $this->router->getAction(),
+            'request_method'     => $this->request->getMethod(),
+            'request_url'        => $this->request->getUrl(),
+            'query_count'        => $context->sql_count,
+            'execute_time'       => $this->request->getElapsedTime(),
+            'memory_usage'       => $memory_usage,
+            'system_time'        => date('Y-m-d H:i:s'),
+            'server_ip'          => $this->request->getServer('SERVER_ADDR'),
+            'client_ip'          => $this->request->getClientIp(),
+            'server_software'    => $this->request->getServer('SERVER_SOFTWARE'),
+            'manaphp_version'    => Version::get(),
+            'php_version'        => PHP_VERSION,
+            'sapi'               => PHP_SAPI,
+            'loaded_ini'         => php_ini_loaded_file(),
+            'loaded_extensions'  => implode(', ', $loaded_extensions),
+            'opcache.enable'     => ini_get('opcache.enable'),
+            'opcache.enable_cli' => ini_get('opcache.enable_cli'),
         ];
     }
 
     /**
      * @return array
      */
-    protected function _getData()
+    protected function getData()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         $data = [];
-        $data['basic'] = $this->_getBasic();
+        $data['basic'] = $this->self->getBasic();
         $levels = array_flip($this->logger->getLevels());
         $data['logger'] = ['log' => $context->log, 'levels' => $levels, 'level' => Logger::LEVEL_DEBUG];
         $data['sql'] = [
@@ -297,15 +349,19 @@ class DebuggerPlugin extends Plugin
 
         $data['view'] = $context->view;
         $data['components'] = [];
+        $data['tracers'] = [];
         $data['events'] = $context->events;
 
-        foreach ($this->_di->getInstances() as $name => $instance) {
+        foreach ($this->container->getInstances() as $name => $instance) {
             if (str_contains($name, '\\')) {
                 continue;
             }
 
-            $properties = $instance instanceof Component ? $instance->dump() : array_keys(get_object_vars($instance));
-            $data['components'][$name] = ['class' => get_class($instance), 'properties' => $properties];
+            $properties = Reflection::isInstanceOf($instance, Component::class)
+                ? $instance->dump()
+                : array_keys(Reflection::getObjectVars($instance));
+
+            $data['components'][$name] = ['class' => Reflection::getClass($instance), 'properties' => $properties];
         }
 
         $data['included_files'] = @get_included_files() ?: [];
@@ -321,7 +377,7 @@ class DebuggerPlugin extends Plugin
     {
         $data = parent::dump();
 
-        $data['_context'] = array_keys($data['_context']);
+        $data['context'] = array_keys($data['context']);
 
         return $data;
     }

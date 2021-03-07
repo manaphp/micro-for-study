@@ -5,15 +5,18 @@ namespace ManaPHP\Http\Server\Adapter;
 use ManaPHP\Exception\MisuseException;
 use ManaPHP\Http\Server;
 
+/**
+ * @property-read \ManaPHP\AliasInterface $alias
+ */
 class Fpm extends Server
 {
     /**
      * @return void
      */
-    protected function _prepareGlobals()
+    protected function prepareGlobals()
     {
         $rawBody = file_get_contents('php://input');
-        $this->request->prepare($_GET, $_POST, $_SERVER, $rawBody, $_COOKIE, $_SERVER);
+        $this->request->prepare($_GET, $_POST, $_SERVER, $rawBody, $_COOKIE, $_FILES);
     }
 
     /**
@@ -23,27 +26,32 @@ class Fpm extends Server
      */
     public function start($handler)
     {
-        $this->_prepareGlobals();
+        $this->prepareGlobals();
 
         $handler->handle();
     }
 
     /**
-     * @param \ManaPHP\Http\ResponseContext $response
-     *
      * @return static
      */
-    public function send($response)
+    public function send()
     {
         if (headers_sent($file, $line)) {
             throw new MisuseException("Headers has been sent in $file:$line");
         }
 
-        $this->fireEvent('response:sending', $response);
+        if (!is_string($this->response->getContent()) && !$this->response->hasFile()) {
+            $this->fireEvent('response:stringify');
+            if (!is_string($content = $this->response->getContent())) {
+                $this->response->setContent(json_stringify($content));
+            }
+        }
 
-        header('HTTP/1.1 ' . $response->status_code . ' ' . $response->status_text);
+        $this->fireEvent('response:sending');
 
-        foreach ($response->headers as $header => $value) {
+        header('HTTP/1.1 ' . $this->response->getStatus());
+
+        foreach ($this->response->getHeaders() as $header => $value) {
             if ($value !== null) {
                 header($header . ': ' . $value);
             } else {
@@ -51,7 +59,7 @@ class Fpm extends Server
             }
         }
 
-        foreach ($response->cookies as $cookie) {
+        foreach ($this->response->getCookies() as $cookie) {
             setcookie(
                 $cookie['name'],
                 $cookie['value'],
@@ -66,17 +74,18 @@ class Fpm extends Server
         header('X-Request-Id: ' . $this->request->getRequestId());
         header('X-Response-Time: ' . $this->request->getElapsedTime());
 
-        if ($response->status_code === 304) {
+        $content = $this->response->getContent();
+        if ($this->response->getStatusCode() === 304) {
             null;
         } elseif ($this->request->isHead()) {
-            header('Content-Length: ' . strlen($response->content));
-        } elseif ($response->file) {
-            readfile($this->alias->resolve($response->file));
+            header('Content-Length: ' . strlen($content));
+        } elseif ($file = $this->response->getFile()) {
+            readfile($this->alias->resolve($file));
         } else {
-            echo $response->content;
+            echo $content;
         }
 
-        $this->fireEvent('response:sent', $response);
+        $this->fireEvent('response:sent');
 
         return $this;
     }

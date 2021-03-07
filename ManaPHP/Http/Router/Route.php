@@ -3,46 +3,42 @@
 namespace ManaPHP\Http\Router;
 
 use ManaPHP\Exception\InvalidFormatException;
+use ManaPHP\Helper\Str;
 
 class Route implements RouteInterface
 {
     /**
      * @var string
      */
-    protected $_pattern;
+    protected $pattern;
 
     /**
      * @var string
      */
-    protected $_compiled;
+    protected $compiled;
 
     /**
      * @var array
      */
-    protected $_paths;
+    protected $paths;
 
     /**
-     * @var string
+     * @var string|array
      */
-    protected $_method;
+    protected $methods;
 
     /**
      * @param string       $pattern
      * @param string|array $paths
-     * @param string       $method
+     * @param string|array $methods
      * @param bool         $case_sensitive
      */
-    public function __construct($pattern, $paths = null, $method = null, $case_sensitive = true)
+    public function __construct($pattern, $paths = null, $methods = null, $case_sensitive = true)
     {
-        $this->_pattern = $pattern;
-        if ($method === 'REST') {
-            $this->_compiled = $this->_compilePattern(($pattern . '(/{params:[-\w]+})?'), $case_sensitive);
-        } else {
-            $this->_compiled = $this->_compilePattern($pattern, $case_sensitive);
-        }
-
-        $this->_paths = $this->_normalizePaths($paths);
-        $this->_method = $method;
+        $this->pattern = $pattern;
+        $this->compiled = $this->compilePattern($pattern, $case_sensitive);
+        $this->paths = $this->normalizePaths($paths);
+        $this->methods = $methods;
     }
 
     /**
@@ -53,45 +49,53 @@ class Route implements RouteInterface
      *
      * @return string
      */
-    protected function _compilePattern($pattern, $case_sensitive)
+    protected function compilePattern($pattern, $case_sensitive)
     {
-        if (str_contains($pattern, '{')) {
-            $tr = [
-                '{area}'       => '{area:[a-zA-Z]\w*}',
-                '{controller}' => '{controller:[a-zA-Z]\w*}',
-                '{action}'     => '{action:[a-zA-Z]\w*}',
-                '{params}'     => '{params:.*}',
-                '{id}'         => '{id:[^/]+}',
-                ':int'         => ':\d+',
-            ];
-            $pattern = strtr($pattern, $tr);
-        }
-
-        if (str_contains($pattern, '{')) {
-            $need_restore_token = false;
-
-            if (preg_match('#{\d#', $pattern) === 1) {
-                $need_restore_token = true;
-                $pattern = (string)preg_replace('#{([\d,]+)}#', '@\1@', $pattern);
-            }
-
-            $matches = [];
-            if (preg_match_all('#{([A-Z].*)}#Ui', $pattern, $matches, PREG_SET_ORDER) > 0) {
-                foreach ($matches as $match) {
-                    $parts = explode(':', $match[1], 2);
-                    $to = '(?<' . $parts[0] . '>' . ($parts[1] ?? '[\w\-]+') . ')';
-                    $pattern = (string)str_replace($match[0], $to, $pattern);
-                }
-            }
-
-            if ($need_restore_token) {
-                $pattern = (string)preg_replace('#@([\d,]+)@#', '{\1}', $pattern);
-            }
-
-            return '#^' . $pattern . '$#' . ($case_sensitive ? '' : 'i');
-        } else {
+        if (strpbrk($pattern, ':{') === false) {
             return $pattern;
         }
+
+        $tr = [
+            '{area}'       => '{area:[a-zA-Z]\w*}',
+            ':area'        => '{area:[a-zA-Z]\w*}',
+            '{controller}' => '{controller:[a-zA-Z]\w*}',
+            ':controller'  => '{controller:[a-zA-Z]\w*}',
+            '{action}'     => '{action:[a-zA-Z]\w*}',
+            ':action'      => '{action:[a-zA-Z]\w*}',
+            '{params}'     => '{params:.*}',
+            ':params'      => '{params:.*}',
+            '{id}'         => '{id:[^/]+}',
+            ':id'          => '{id:[^/]+}',
+            ':int}'        => ':\d+}',
+            ':uuid}'       => ':[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}}',
+        ];
+        $pattern = strtr($pattern, $tr);
+
+        if (str_contains($pattern, '/:')) {
+            $pattern = preg_replace('#/:(\w+)#', '/{\1}', $pattern);
+        }
+
+        $need_restore_token = false;
+
+        if (preg_match('#{\d#', $pattern) === 1) {
+            $need_restore_token = true;
+            $pattern = (string)preg_replace('#{([\d,]+)}#', '@\1@', $pattern);
+        }
+
+        $matches = [];
+        if (preg_match_all('#{([A-Z].*)}#Ui', $pattern, $matches, PREG_SET_ORDER) > 0) {
+            foreach ($matches as $match) {
+                $parts = explode(':', $match[1], 2);
+                $to = '(?<' . $parts[0] . '>' . ($parts[1] ?? '[^/]+') . ')';
+                $pattern = (string)str_replace($match[0], $to, $pattern);
+            }
+        }
+
+        if ($need_restore_token) {
+            $pattern = (string)preg_replace('#@([\d,]+)@#', '{\1}', $pattern);
+        }
+
+        return '#^' . $pattern . '$#' . ($case_sensitive ? '' : 'i');
     }
 
     /**
@@ -101,7 +105,7 @@ class Route implements RouteInterface
      *
      * @return array
      */
-    protected function _normalizePaths($paths = [])
+    protected function normalizePaths($paths = [])
     {
         $routePaths = [];
 
@@ -111,6 +115,9 @@ class Route implements RouteInterface
             if (($pos = strpos($paths, '::')) !== false) {
                 $routePaths['controller'] = substr($paths, 0, $pos);
                 $routePaths['action'] = substr($paths, $pos + 2);
+            } elseif (($pos = strpos($paths, '@')) !== false) {
+                $routePaths['controller'] = basename(substr($paths, 0, $pos), 'Controller');
+                $routePaths['action'] = substr($paths, $pos + 1);
             } else {
                 $routePaths['controller'] = $paths;
                 $routePaths['action'] = 'index';
@@ -180,22 +187,29 @@ class Route implements RouteInterface
     {
         $matches = [];
 
-        if ($this->_method !== null && $this->_method !== $method && $this->_method !== 'REST') {
+        $methods = $this->methods;
+        if ($methods === null || $methods === 'REST') {
+            null;
+        } elseif (is_string($methods)) {
+            if ($methods !== $method) {
+                return false;
+            }
+        } elseif (!in_array($method, $methods, true)) {
             return false;
         }
 
-        if ($this->_compiled[0] !== '#') {
-            if ($this->_compiled === $uri) {
-                return $this->_paths;
+        if ($this->compiled[0] !== '#') {
+            if ($this->compiled === $uri) {
+                return $this->paths;
             } else {
                 return false;
             }
         } else {
-            $r = preg_match($this->_compiled, $uri, $matches);
+            $r = preg_match($this->compiled, $uri, $matches);
             if ($r === false) {
-                throw new InvalidFormatException(['`%s` is invalid for `%s`', $this->_compiled, $this->_pattern]);
+                throw new InvalidFormatException(['`%s` is invalid for `%s`', $this->compiled, $this->pattern]);
             } elseif ($r === 1) {
-                $parts = $this->_paths;
+                $parts = $this->paths;
 
                 foreach ($matches as $k => $v) {
                     if (is_string($k)) {
@@ -210,7 +224,12 @@ class Route implements RouteInterface
                     }
                 }
 
-                if ($this->_method === 'REST') {
+                if ($this->methods === 'REST') {
+                    $controller = $parts['controller'] ?? '';
+                    if ($controller !== '' && str_contains($this->pattern, '/{controller}')) {
+                        $parts['controller'] = Str::singular($controller);
+                    }
+
                     if (isset($matches['params'])) {
                         $m2a = ['GET' => 'detail', 'POST' => 'update', 'PUT' => 'update', 'DELETE' => 'delete'];
                     } else {
@@ -225,14 +244,6 @@ class Route implements RouteInterface
             } else {
                 return false;
             }
-        }
-
-        if (isset($parts['controller']) && $parts['controller'] === '') {
-            unset($parts['controller']);
-        }
-
-        if (isset($parts['action']) && $parts['action'] === '') {
-            unset($parts['action']);
         }
 
         if (isset($parts['action']) && preg_match('#^\d#', $parts['action'])) {

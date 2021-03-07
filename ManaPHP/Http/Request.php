@@ -48,7 +48,7 @@ class RequestContext implements Stickyable
 
 /**
  * @property-read \ManaPHP\Http\DispatcherInterface $dispatcher
- * @property-read \ManaPHP\Http\RequestContext      $_context
+ * @property-read \ManaPHP\Http\RequestContext      $context
  */
 class Request extends Component implements RequestInterface
 {
@@ -58,16 +58,16 @@ class Request extends Component implements RequestInterface
     public function __construct($options = [])
     {
         if (isset($options['validator'])) {
-            $this->_injections['validator'] = $options['validator'];
+            $this->injections['validator'] = $options['validator'];
         }
     }
 
     /**
      * @return \ManaPHP\Http\RequestContext
      */
-    public function getContext()
+    public function getGlobals()
     {
-        return $this->_context;
+        return $this->context;
     }
 
     /**
@@ -82,7 +82,7 @@ class Request extends Component implements RequestInterface
      */
     public function prepare($GET, $POST, $SERVER, $RAW_BODY = null, $COOKIE = [], $FILES = [])
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if (!$POST
             && (isset($SERVER['REQUEST_METHOD']) && !in_array($SERVER['REQUEST_METHOD'], ['GET', 'OPTIONS'], true))
@@ -114,7 +114,7 @@ class Request extends Component implements RequestInterface
      */
     public function getRawBody()
     {
-        return $this->_context->rawBody;
+        return $this->context->rawBody;
     }
 
     /**
@@ -124,7 +124,7 @@ class Request extends Component implements RequestInterface
      */
     public function setParams($params)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         foreach ($params as $k => $v) {
             if (is_string($k)) {
@@ -149,7 +149,7 @@ class Request extends Component implements RequestInterface
      */
     public function getCookie($name = null, $default = '')
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($name === null) {
             return $context->_COOKIE;
@@ -162,14 +162,39 @@ class Request extends Component implements RequestInterface
 
     /**
      * @param string $name
+     * @param string $value
+     *
+     * @return static
+     */
+    public function setCookie($name, $value)
+    {
+        $this->context->_COOKIE[$name] = $value;
+
+        return $this;
+    }
+
+    /**
+     * @param string $name
      *
      * @return bool
      */
     public function hasCookie($name)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return isset($context->_COOKIE[$name]);
+    }
+
+    /**
+     * @param string $name
+     *
+     * @return static
+     */
+    public function deleteCookie($name)
+    {
+        unset($this->context->_COOKIE[$name]);
+
+        return $this;
     }
 
     /**
@@ -179,9 +204,21 @@ class Request extends Component implements RequestInterface
      *
      * @return mixed
      */
-    protected function _normalizeValue($field, $value, $default)
+    protected function normalizeValue($field, $value, $default)
     {
-        return $value;
+        $type = gettype($default);
+
+        if ($type === 'string') {
+            return (string)$value;
+        } elseif ($type === 'integer') {
+            return (int)$value;
+        } elseif ($type === 'double') {
+            return (double)$value;
+        } elseif ($type === 'boolean') {
+            return (bool)$value;
+        } else {
+            return $value;
+        }
     }
 
     /**
@@ -194,7 +231,7 @@ class Request extends Component implements RequestInterface
      */
     public function get($name = null, $default = null)
     {
-        $source = $this->_context->_REQUEST;
+        $source = $this->context->_REQUEST;
 
         if ($name === null) {
             return $source;
@@ -207,7 +244,7 @@ class Request extends Component implements RequestInterface
                 throw new InvalidValueException(['the value of `:name` name is not scalar', 'name' => $name]);
             }
 
-            return $default === null ? $value : $this->_normalizeValue($name, $value, $default);
+            return $default === null ? $value : $this->self->normalizeValue($name, $value, $default);
         } elseif ($default === null) {
             return null;
         } else {
@@ -217,19 +254,49 @@ class Request extends Component implements RequestInterface
 
     /**
      * @param string $name
+     * @param mixed  $value
+     *
+     * @return static
+     */
+    public function set($name, $value)
+    {
+        $context = $this->context;
+
+        $context->_GET[$name] = $value;
+        $context->_REQUEST[$name] = $value;
+
+        return $this;
+    }
+
+    /**
+     * @param string $name
+     *
+     * @return static
+     */
+    public function delete($name)
+    {
+        $context = $this->context;
+
+        unset($context->_GET[$name], $context->_POST[$name], $context->_REQUEST[$name]);
+
+        return $this;
+    }
+
+    /**
+     * @param string $name
      *
      * @return int|string
      */
     public function getId($name = 'id')
     {
-        $source = $this->_context->_REQUEST;
+        $source = $this->context->_REQUEST;
 
         if (isset($source[$name])) {
             $id = $source[$name];
         } elseif (isset($source['id'])) {
             $id = $source['id'];
         } else {
-            return '';
+            return null;
         }
 
         if (!is_scalar($id)) {
@@ -249,7 +316,7 @@ class Request extends Component implements RequestInterface
      */
     public function getServer($name = null, $default = '')
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($name === null) {
             return $context->_SERVER;
@@ -266,7 +333,7 @@ class Request extends Component implements RequestInterface
      */
     public function setServer($name, $value)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         $context->_SERVER[$name] = $value;
 
@@ -278,7 +345,7 @@ class Request extends Component implements RequestInterface
      */
     public function getMethod()
     {
-        return $this->_context->_SERVER['REQUEST_METHOD'];
+        return $this->context->_SERVER['REQUEST_METHOD'];
     }
 
     /**
@@ -290,7 +357,7 @@ class Request extends Component implements RequestInterface
      */
     public function has($name)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return isset($context->_REQUEST[$name]);
     }
@@ -302,7 +369,7 @@ class Request extends Component implements RequestInterface
      */
     public function hasServer($name)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return isset($context->_SERVER[$name]);
     }
@@ -314,10 +381,10 @@ class Request extends Component implements RequestInterface
      */
     public function getScheme()
     {
-        if ($scheme = $this->getServer('REQUEST_SCHEME')) {
+        if ($scheme = $this->self->getServer('REQUEST_SCHEME')) {
             return $scheme;
         } else {
-            return $this->getServer('HTTPS') === 'on' ? 'https' : 'http';
+            return $this->self->getServer('HTTPS') === 'on' ? 'https' : 'http';
         }
     }
 
@@ -328,7 +395,7 @@ class Request extends Component implements RequestInterface
      */
     public function isAjax()
     {
-        return $this->getServer('HTTP_X_REQUESTED_WITH') === 'XMLHttpRequest';
+        return $this->self->getServer('HTTP_X_REQUESTED_WITH') === 'XMLHttpRequest';
     }
 
     /**
@@ -336,7 +403,7 @@ class Request extends Component implements RequestInterface
      */
     public function isWebSocket()
     {
-        return $this->getServer('HTTP_UPGRADE') === 'websocket';
+        return $this->self->getServer('HTTP_UPGRADE') === 'websocket';
     }
 
     /**
@@ -344,7 +411,7 @@ class Request extends Component implements RequestInterface
      */
     public function getClientIp()
     {
-        return $this->getServer('HTTP_X_REAL_IP') ?: $this->getServer('REMOTE_ADDR');
+        return $this->self->getServer('HTTP_X_REAL_IP') ?: $this->self->getServer('REMOTE_ADDR');
     }
 
     /**
@@ -356,7 +423,7 @@ class Request extends Component implements RequestInterface
      */
     public function getUserAgent($max_len = -1)
     {
-        $user_agent = $this->getServer('HTTP_USER_AGENT');
+        $user_agent = $this->self->getServer('HTTP_USER_AGENT');
 
         return $max_len > 0 && strlen($user_agent) > $max_len ? substr($user_agent, 0, $max_len) : $user_agent;
     }
@@ -368,7 +435,7 @@ class Request extends Component implements RequestInterface
      */
     public function isPost()
     {
-        return $this->getMethod() === 'POST';
+        return $this->self->getMethod() === 'POST';
     }
 
     /**
@@ -378,7 +445,7 @@ class Request extends Component implements RequestInterface
      */
     public function isGet()
     {
-        return $this->getMethod() === 'GET';
+        return $this->self->getMethod() === 'GET';
     }
 
     /**
@@ -388,7 +455,7 @@ class Request extends Component implements RequestInterface
      */
     public function isPut()
     {
-        return $this->getMethod() === 'PUT';
+        return $this->self->getMethod() === 'PUT';
     }
 
     /**
@@ -398,7 +465,7 @@ class Request extends Component implements RequestInterface
      */
     public function isPatch()
     {
-        return $this->getMethod() === 'PATCH';
+        return $this->self->getMethod() === 'PATCH';
     }
 
     /**
@@ -408,7 +475,7 @@ class Request extends Component implements RequestInterface
      */
     public function isHead()
     {
-        return $this->getMethod() === 'HEAD';
+        return $this->self->getMethod() === 'HEAD';
     }
 
     /**
@@ -418,7 +485,7 @@ class Request extends Component implements RequestInterface
      */
     public function isDelete()
     {
-        return $this->getMethod() === 'DELETE';
+        return $this->self->getMethod() === 'DELETE';
     }
 
     /**
@@ -428,7 +495,7 @@ class Request extends Component implements RequestInterface
      */
     public function isOptions()
     {
-        return $this->getMethod() === 'OPTIONS';
+        return $this->self->getMethod() === 'OPTIONS';
     }
 
     /**
@@ -441,7 +508,7 @@ class Request extends Component implements RequestInterface
      */
     public function hasFiles($onlySuccessful = true)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         /** @var array $_FILES */
         foreach ($context->_FILES as $file) {
@@ -472,7 +539,7 @@ class Request extends Component implements RequestInterface
      */
     public function getFiles($onlySuccessful = true)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         $r = [];
 
@@ -483,7 +550,7 @@ class Request extends Component implements RequestInterface
                     if (!$onlySuccessful || $file['error'] === UPLOAD_ERR_OK) {
                         $file['key'] = $key;
 
-                        $r[] = $this->getInstance('ManaPHP\Http\Request\File', $file);
+                        $r[] = $this->getNew('ManaPHP\Http\Request\File', $file);
                     }
                 }
             } elseif (is_int($files['error'])) {
@@ -491,7 +558,7 @@ class Request extends Component implements RequestInterface
                 if (!$onlySuccessful || $file['error'] === UPLOAD_ERR_OK) {
                     $file['key'] = $key;
 
-                    $r[] = $this->getInstance('ManaPHP\Http\Request\File', $file);
+                    $r[] = $this->getNew('ManaPHP\Http\Request\File', $file);
                 }
             } else {
                 $countFiles = count($files['error']);
@@ -505,7 +572,7 @@ class Request extends Component implements RequestInterface
                             'error'    => $files['error'][$i],
                             'size'     => $files['size'][$i],
                         ];
-                        $r[] = $this->getInstance('ManaPHP\Http\Request\File', $file);
+                        $r[] = $this->getNew('ManaPHP\Http\Request\File', $file);
                     }
                 }
             }
@@ -521,7 +588,7 @@ class Request extends Component implements RequestInterface
      */
     public function getFile($key = null)
     {
-        $files = $this->getFiles();
+        $files = $this->self->getFiles();
 
         if ($key === null) {
             if ($files) {
@@ -540,6 +607,27 @@ class Request extends Component implements RequestInterface
     }
 
     /**
+     * @param string $key
+     *
+     * @return bool
+     */
+    public function hasFile($key = null)
+    {
+        $files = $this->self->getFiles();
+
+        if ($key === null) {
+            return count($files) > 0;
+        } else {
+            foreach ($files as $file) {
+                if ($file->getKey() === $key) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
      * Gets web page that refers active request. ie: http://www.google.com
      *
      * @param int $max_len
@@ -548,7 +636,7 @@ class Request extends Component implements RequestInterface
      */
     public function getReferer($max_len = -1)
     {
-        $referer = $this->getServer('HTTP_REFERER');
+        $referer = $this->self->getServer('HTTP_REFERER');
 
         return $max_len > 0 && strlen($referer) > $max_len ? substr($referer, 0, $max_len) : $referer;
     }
@@ -560,7 +648,7 @@ class Request extends Component implements RequestInterface
      */
     public function getOrigin($strict = true)
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($origin = $context->_SERVER['HTTP_ORIGIN'] ?? null) {
             return $origin;
@@ -585,7 +673,7 @@ class Request extends Component implements RequestInterface
      */
     public function getHost()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($host = $context->_SERVER['HTTP_HOST'] ?? null) {
             return $host;
@@ -599,7 +687,11 @@ class Request extends Component implements RequestInterface
      */
     public function getUrl()
     {
-        return strip_tags($this->getScheme() . '://' . $this->getServer('HTTP_HOST') . $this->getServer('REQUEST_URI'));
+        return strip_tags(
+            $this->self->getScheme() . '://' . $this->self->getServer('HTTP_HOST') . $this->self->getServer(
+                'REQUEST_URI'
+            )
+        );
     }
 
     /**
@@ -607,7 +699,7 @@ class Request extends Component implements RequestInterface
      */
     public function getUri()
     {
-        return strip_tags($this->getServer('REQUEST_URI'));
+        return strip_tags($this->self->getServer('REQUEST_URI'));
     }
 
     /**
@@ -617,9 +709,9 @@ class Request extends Component implements RequestInterface
      */
     public function getToken($name = 'token')
     {
-        if ($token = $this->get($name, '')) {
+        if ($token = $this->self->get($name, '')) {
             return $token;
-        } elseif ($token = $this->getServer('HTTP_AUTHORIZATION')) {
+        } elseif ($token = $this->self->getServer('HTTP_AUTHORIZATION')) {
             $parts = explode(' ', $token, 2);
             if ($parts[0] === 'Bearer' && count($parts) === 2) {
                 return $parts[1];
@@ -631,7 +723,7 @@ class Request extends Component implements RequestInterface
 
     public function jsonSerialize()
     {
-        return $this->_context;
+        return $this->context;
     }
 
     /**
@@ -639,10 +731,10 @@ class Request extends Component implements RequestInterface
      */
     public function getRequestId()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         if ($context->request_id === null) {
-            $this->setRequestId($context->_SERVER['HTTP_X_REQUEST_ID'] ?? null);
+            $this->self->setRequestId($context->_SERVER['HTTP_X_REQUEST_ID'] ?? null);
         }
 
         return $context->request_id;
@@ -659,7 +751,7 @@ class Request extends Component implements RequestInterface
             $request_id = preg_replace('#[^\-\w.]#', 'X', $request_id);
         }
 
-        $this->_context->request_id = $request_id ?: bin2hex(random_bytes(16));
+        $this->context->request_id = $request_id ?: bin2hex(random_bytes(16));
     }
 
     /**
@@ -667,7 +759,7 @@ class Request extends Component implements RequestInterface
      */
     public function getRequestTime()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return $context->_SERVER['REQUEST_TIME_FLOAT'];
     }
@@ -679,7 +771,7 @@ class Request extends Component implements RequestInterface
      */
     public function getElapsedTime($precision = 3)
     {
-        return round(microtime(true) - $this->getRequestTime(), $precision);
+        return round(microtime(true) - $this->self->getRequestTime(), $precision);
     }
 
     /**
@@ -687,7 +779,7 @@ class Request extends Component implements RequestInterface
      */
     public function getIfNoneMatch()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return $context->_SERVER['HTTP_IF_NONE_MATCH'] ?? null;
     }
@@ -697,7 +789,7 @@ class Request extends Component implements RequestInterface
      */
     public function getAcceptLanguage()
     {
-        $context = $this->_context;
+        $context = $this->context;
 
         return $context->_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? null;
     }
@@ -708,7 +800,7 @@ class Request extends Component implements RequestInterface
 
         if (DIRECTORY_SEPARATOR === '\\') {
             foreach (['PATH', 'SystemRoot', 'COMSPEC', 'PATHEXT', 'WINDIR'] as $name) {
-                unset($data['_context']['_SERVER'][$name]);
+                unset($data['context']['_SERVER'][$name]);
             }
         }
 

@@ -17,25 +17,26 @@ class SwooleContext
 }
 
 /**
+ * @property-read \ManaPHP\AliasInterface                    $alias
  * @property-read \ManaPHP\Http\RouterInterface              $router
- * @property-read \ManaPHP\Http\Server\Adapter\SwooleContext $_context
+ * @property-read \ManaPHP\Http\Server\Adapter\SwooleContext $context
  */
 class Swoole extends Server
 {
     /**
      * @var array
      */
-    protected $_settings = [];
+    protected $settings = [];
 
     /**
      * @var \Swoole\Http\Server
      */
-    protected $_swoole;
+    protected $swoole;
 
     /**
      * @var \ManaPHP\Http\Server\HandlerInterface
      */
-    protected $_handler;
+    protected $handler;
 
     /**
      * @var array
@@ -52,8 +53,8 @@ class Swoole extends Server
             'DOCUMENT_ROOT'   => dirname($script_filename),
             'SCRIPT_FILENAME' => $script_filename,
             'SCRIPT_NAME'     => '/' . basename($script_filename),
-            'SERVER_ADDR'     => $this->_host === '0.0.0.0' ? '127.0.0.1' : $this->_host,
-            'SERVER_PORT'     => $this->_port,
+            'SERVER_ADDR'     => $this->host === '0.0.0.0' ? '127.0.0.1' : $this->host,
+            'SERVER_PORT'     => $this->port,
             'SERVER_SOFTWARE' => 'Swoole/' . SWOOLE_VERSION . ' (' . PHP_OS . ') PHP/' . PHP_VERSION,
             'PHP_SELF'        => '/' . basename($script_filename),
             'QUERY_STRING'    => '',
@@ -74,14 +75,14 @@ class Swoole extends Server
 
         unset($options['use_globals'], $options['host'], $options['port']);
 
-        $this->_settings = $options;
+        $this->settings = $options;
 
-        $this->_swoole = new \Swoole\Http\Server($this->_host, $this->_port);
-        $this->_swoole->set($this->_settings);
-        $this->_swoole->on('Start', [$this, 'onStart']);
-        $this->_swoole->on('ManagerStart', [$this, 'onManagerStart']);
-        $this->_swoole->on('WorkerStart', [$this, 'onWorkerStart']);
-        $this->_swoole->on('request', [$this, 'onRequest']);
+        $this->swoole = new \Swoole\Http\Server($this->host, $this->port);
+        $this->swoole->set($this->settings);
+        $this->swoole->on('Start', [$this, 'onStart']);
+        $this->swoole->on('ManagerStart', [$this, 'onManagerStart']);
+        $this->swoole->on('WorkerStart', [$this, 'onWorkerStart']);
+        $this->swoole->on('request', [$this, 'onRequest']);
     }
 
     /**
@@ -89,7 +90,7 @@ class Swoole extends Server
      *
      * @return void
      */
-    protected function _prepareGlobals($request)
+    protected function prepareGlobals($request)
     {
         $_server = array_change_key_case($request->server, CASE_UPPER);
         unset($_server['SERVER_SOFTWARE']);
@@ -120,7 +121,7 @@ class Swoole extends Server
      */
     public function onStart($server)
     {
-        @cli_set_process_title(sprintf('manaphp %s: master', $this->configure->id));
+        @cli_set_process_title(sprintf('manaphp %s: master', APP_ID));
     }
 
     /**
@@ -128,7 +129,7 @@ class Swoole extends Server
      */
     public function onManagerStart()
     {
-        @cli_set_process_title(sprintf('manaphp %s: manager', $this->configure->id));
+        @cli_set_process_title(sprintf('manaphp %s: manager', APP_ID));
     }
 
     /**
@@ -141,7 +142,7 @@ class Swoole extends Server
      */
     public function onWorkerStart($server, $worker_id)
     {
-        @cli_set_process_title(sprintf('manaphp %s: worker/%d', $this->configure->id, $worker_id));
+        @cli_set_process_title(sprintf('manaphp %s: worker/%d', APP_ID, $worker_id));
     }
 
     /**
@@ -155,13 +156,13 @@ class Swoole extends Server
             Runtime::enableCoroutine(true);
         }
 
-        $this->_handler = $handler;
+        $this->handler = $handler;
 
         echo PHP_EOL, str_repeat('+', 80), PHP_EOL;
 
-        $settings = json_stringify($this->_settings);
-        console_log('info', ['listen on: %s:%d with setting: %s', $this->_host, $this->_port, $settings]);
-        $this->_swoole->start();
+        $settings = json_stringify($this->settings);
+        console_log('info', ['listen on: %s:%d with setting: %s', $this->host, $this->port, $settings]);
+        $this->swoole->start();
         console_log('info', 'shutdown');
     }
 
@@ -177,14 +178,14 @@ class Swoole extends Server
             $response->status(404);
             $response->end();
         } else {
-            $context = $this->_context;
+            $context = $this->context;
 
             $context->response = $response;
 
             try {
-                $this->_prepareGlobals($request);
+                $this->prepareGlobals($request);
 
-                $this->_handler->handle();
+                $this->handler->handle();
             } catch (Throwable $throwable) {
                 $str = date('c') . ' ' . get_class($throwable) . ': ' . $throwable->getMessage() . PHP_EOL;
                 $str .= '    at ' . $throwable->getFile() . ':' . $throwable->getLine() . PHP_EOL;
@@ -195,7 +196,7 @@ class Swoole extends Server
             if (!MANAPHP_COROUTINE_ENABLED) {
                 global $__root_context;
                 foreach ($__root_context as $owner) {
-                    unset($owner->_context);
+                    unset($owner->context);
                 }
                 $__root_context = null;
             }
@@ -203,27 +204,32 @@ class Swoole extends Server
     }
 
     /**
-     * @param \ManaPHP\Http\ResponseContext $response
-     *
      * @return void
      */
-    public function send($response)
+    public function send()
     {
-        $this->fireEvent('response:sending', $response);
-
-        $sw_response = $this->_context->response;
-
-        $sw_response->status($response->status_code);
-
-        foreach ($response->headers as $name => $value) {
-            $sw_response->header($name, $value, false);
+        if (!is_string($this->response->getContent()) && !$this->response->hasFile()) {
+            $this->fireEvent('response:stringify');
+            if (!is_string($content = $this->response->getContent())) {
+                $this->response->setContent(json_stringify($content));
+            }
         }
 
-        $sw_response->header('X-Request-Id', $this->request->getRequestId(), false);
-        $sw_response->header('X-Response-Time', $this->request->getElapsedTime(), false);
+        $this->fireEvent('response:sending');
 
-        foreach ($response->cookies as $cookie) {
-            $sw_response->cookie(
+        $response = $this->context->response;
+
+        $response->status($this->response->getStatusCode());
+
+        foreach ($this->response->getHeaders() as $name => $value) {
+            $response->header($name, $value, false);
+        }
+
+        $response->header('X-Request-Id', $this->request->getRequestId(), false);
+        $response->header('X-Response-Time', $this->request->getElapsedTime(), false);
+
+        foreach ($this->response->getCookies() as $cookie) {
+            $response->cookie(
                 $cookie['name'],
                 $cookie['value'],
                 $cookie['expire'],
@@ -234,17 +240,18 @@ class Swoole extends Server
             );
         }
 
-        if ($response->status_code === 304) {
-            $sw_response->end('');
+        $content = $this->response->getContent();
+        if ($this->response->getStatusCode() === 304) {
+            $response->end('');
         } elseif ($this->request->isHead()) {
-            $sw_response->header('Content-Length', strlen($response->content), false);
-            $sw_response->end('');
-        } elseif ($response->file) {
-            $sw_response->sendfile($this->alias->resolve($response->file));
+            $response->header('Content-Length', strlen($content), false);
+            $response->end('');
+        } elseif ($file = $this->response->getFile()) {
+            $response->sendfile($this->alias->resolve($file));
         } else {
-            $sw_response->end($response->content);
+            $response->end($content);
         }
 
-        $this->fireEvent('response:sent', $response);
+        $this->fireEvent('response:sent');
     }
 }

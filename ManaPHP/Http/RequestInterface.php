@@ -7,7 +7,7 @@ interface RequestInterface
     /**
      * @return \ManaPHP\Http\RequestContext
      */
-    public function getContext();
+    public function getGlobals();
 
     /**
      * @param array  $GET
@@ -45,10 +45,25 @@ interface RequestInterface
 
     /**
      * @param string $name
+     * @param string $value
+     *
+     * @return static
+     */
+    public function setCookie($name, $value);
+
+    /**
+     * @param string $name
      *
      * @return bool
      */
     public function hasCookie($name);
+
+    /**
+     * @param string $name
+     *
+     * @return static
+     */
+    public function deleteCookie($name);
 
     /**
      * @param string $name
@@ -57,6 +72,21 @@ interface RequestInterface
      * @return mixed
      */
     public function get($name = null, $default = null);
+
+    /**
+     * @param string $name
+     * @param mixed  $value
+     *
+     * @return static
+     */
+    public function set($name, $value);
+
+    /**
+     * @param string $name
+     *
+     * @return static
+     */
+    public function delete($name);
 
     /**
      * @param string $name
@@ -202,6 +232,13 @@ interface RequestInterface
      * @return \ManaPHP\Http\Request\FileInterface
      */
     public function getFile($key = null);
+
+    /**
+     * @param string $key
+     *
+     * @return bool
+     */
+    public function hasFile($key = null);
 
     /**
      * Gets web page that refers active request. ie: http://www.google.com

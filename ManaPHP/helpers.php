@@ -1,6 +1,6 @@
 <?php
 
-use ManaPHP\Di;
+use ManaPHP\Di\Container;
 use ManaPHP\Exception\AbortException;
 use ManaPHP\Exception\InvalidValueException;
 use ManaPHP\Exception\JsonException;
@@ -82,7 +82,7 @@ if (!function_exists('json_stringify')) {
      */
     function json_stringify($json, $options = 0)
     {
-        $options |= JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR;
+        $options |= JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE;
 
         if (($str = json_encode($json, $options, 16)) === false) {
             throw new JsonException('json_stringify failed');
@@ -116,20 +116,20 @@ if (!function_exists('xml_decode')) {
     }
 }
 
-if (!function_exists('di')) {
+if (!function_exists('container')) {
     /**
      * @param string $name
      *
      * @return mixed
      */
-    function di($name = null)
+    function container($name = null)
     {
-        static $di;
-        if (!$di) {
-            $di = Di::getDefault();
+        static $container;
+        if (!$container) {
+            $container = Container::getDefault();
         }
 
-        return $name === null ? $di : $di->getShared($name);
+        return $name === null ? $container : $container->getShared($name);
     }
 }
 
@@ -142,7 +142,7 @@ if (!function_exists('env')) {
      */
     function env($key = null, $default = null)
     {
-        return di('dotenv')->get($key, $default);
+        return container('dotenv')->get($key, $default);
     }
 }
 
@@ -155,7 +155,7 @@ if (!function_exists('param_get')) {
      */
     function param_get($name, $default = null)
     {
-        return di('configure')->getParam($name, $default);
+        return container('configure')->getParam($name, $default);
     }
 }
 
@@ -168,7 +168,7 @@ if (!function_exists('log_debug')) {
      */
     function log_debug($message, $category = null)
     {
-        di('logger')->debug($message, $category);
+        container('logger')->debug($message, $category);
     }
 }
 
@@ -181,7 +181,7 @@ if (!function_exists('log_info')) {
      */
     function log_info($message, $category = null)
     {
-        di('logger')->info($message, $category);
+        container('logger')->info($message, $category);
     }
 }
 
@@ -194,7 +194,7 @@ if (!function_exists('log_warn')) {
      */
     function log_warn($message, $category = null)
     {
-        di('logger')->warn($message, $category);
+        container('logger')->warn($message, $category);
     }
 }
 
@@ -207,7 +207,7 @@ if (!function_exists('log_error')) {
      */
     function log_error($message, $category = null)
     {
-        di('logger')->error($message, $category);
+        container('logger')->error($message, $category);
     }
 }
 
@@ -220,7 +220,7 @@ if (!function_exists('log_fatal')) {
      */
     function log_fatal($message, $category = null)
     {
-        di('logger')->fatal($message, $category);
+        container('logger')->fatal($message, $category);
     }
 }
 
@@ -232,7 +232,7 @@ if (!function_exists('dd')) {
      */
     function dd($message)
     {
-        di('dataDump')->output($message);
+        container('dataDump')->output($message);
     }
 }
 
@@ -244,7 +244,7 @@ if (!function_exists('path')) {
      */
     function path($path)
     {
-        return $path ? di('alias')->resolve($path) : di('alias')->get();
+        return $path ? container('alias')->resolve($path) : container('alias')->get();
     }
 }
 
@@ -258,7 +258,7 @@ if (!function_exists('jwt_encode')) {
      */
     function jwt_encode($claims, $ttl, $scope)
     {
-        return di('scopedJwt')->encode($claims, $ttl, $scope);
+        return container('scopedJwt')->encode($claims, $ttl, $scope);
     }
 }
 
@@ -272,7 +272,7 @@ if (!function_exists('jwt_decode')) {
      */
     function jwt_decode($token, $scope, $verify = true)
     {
-        return di('scopedJwt')->decode($token, $scope, $verify);
+        return container('scopedJwt')->decode($token, $scope, $verify);
     }
 }
 
@@ -285,7 +285,7 @@ if (!function_exists('jwt_verify')) {
      */
     function jwt_verify($token, $scope)
     {
-        di('scopedJwt')->verify($token, $scope);
+        container('scopedJwt')->verify($token, $scope);
     }
 }
 
@@ -295,28 +295,17 @@ if (!function_exists('client_ip')) {
      */
     function client_ip()
     {
-        return di('request')->getClientIp();
+        return container('request')->getClientIp();
     }
 }
 
 if (!function_exists('abort')) {
     /**
-     * @param string $message
-     * @param int    $code
-     *
      * @return void
      * @throws \ManaPHP\Exception\AbortException
      */
-    function abort($message = null, $code = 1)
+    function abort()
     {
-        if ($message === null) {
-            null;
-        } elseif ($code === null) {
-            di('response')->setContent($message);
-        } else {
-            di('response')->setJsonError($message, $code);
-        }
-
         throw new AbortException();
     }
 }
@@ -362,7 +351,7 @@ if (!function_exists('t')) {
      */
     function t($id, $bind = [])
     {
-        return di('translator')->translate($id, $bind);
+        return container('translator')->translate($id, $bind);
     }
 }
 
@@ -372,7 +361,7 @@ if (!function_exists('base_url')) {
      */
     function base_url()
     {
-        return di('alias')->get('@web');
+        return container('alias')->get('@web');
     }
 }
 

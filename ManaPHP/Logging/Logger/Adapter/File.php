@@ -4,22 +4,20 @@ namespace ManaPHP\Logging\Logger\Adapter;
 
 use ManaPHP\Logging\Logger;
 
+/**
+ * @property-read \ManaPHP\AliasInterface $alias
+ */
 class File extends Logger
 {
     /**
      * @var string
      */
-    protected $_file = '@data/logger/{id}.log';
+    protected $file = '@data/logger/{id}.log';
 
     /**
      * @var string
      */
-    protected $_format = '[:date][:client_ip][:request_id16][:level][:category][:location] :message';
-
-    /**
-     * @var string
-     */
-    protected $_tail = PHP_EOL;
+    protected $format = '[:date][:client_ip][:request_id16][:level][:category][:location] :message';
 
     /**
      * @param array $options
@@ -29,26 +27,13 @@ class File extends Logger
         parent::__construct($options);
 
         if (isset($options['file'])) {
-            $this->_file = $options['file'];
+            $this->file = $options['file'];
         }
 
-        $this->_file = strtr($this->_file, ['{id}' => $this->configure->id]);
+        $this->file = strtr($this->file, ['{id}' => APP_ID]);
 
         if (isset($options['format'])) {
-            $this->_format = $options['format'];
-        }
-
-        if (isset($options['tail'])) {
-            $this->_tail = $options['tail'];
-        }
-    }
-
-    public function onRequestEnd()
-    {
-        parent::onRequestEnd();
-
-        if ($this->_tail !== '') {
-            $this->_write($this->_tail);
+            $this->format = $options['format'];
         }
     }
 
@@ -57,7 +42,7 @@ class File extends Logger
      *
      * @return string
      */
-    protected function _format($log)
+    protected function format($log)
     {
         $replaced = [];
 
@@ -71,13 +56,13 @@ class File extends Logger
         $replaced[':level'] = strtoupper($log->level);
         if ($log->category === 'exception') {
             $replaced[':message'] = '';
-            $message = preg_replace('#[\\r\\n]+#', '\0' . strtr($this->_format, $replaced), $log->message);
+            $message = preg_replace('#[\\r\\n]+#', '\0' . strtr($this->format, $replaced), $log->message);
             $replaced[':message'] = $message . PHP_EOL;
         } else {
             $replaced[':message'] = $log->message . PHP_EOL;
         }
 
-        return strtr($this->_format, $replaced);
+        return strtr($this->format, $replaced);
     }
 
     /**
@@ -85,9 +70,9 @@ class File extends Logger
      *
      * @return void
      */
-    protected function _write($str)
+    protected function write($str)
     {
-        $file = $this->alias->resolve($this->_file);
+        $file = $this->alias->resolve($this->file);
         if (!is_file($file)) {
             $dir = dirname($file);
             if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
@@ -110,10 +95,10 @@ class File extends Logger
     {
         $str = '';
         foreach ($logs as $log) {
-            $s = $this->_format($log);
+            $s = $this->self->format($log);
             $str = $str === '' ? $s : $str . $s;
         }
 
-        $this->_write($str);
+        $this->self->write($str);
     }
 }

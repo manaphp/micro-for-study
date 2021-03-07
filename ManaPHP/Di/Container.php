@@ -1,58 +1,43 @@
 <?php
 
-namespace ManaPHP;
+namespace ManaPHP\Di;
 
 use Closure;
-use ManaPHP\Di\Injectable;
 use ManaPHP\Exception\InvalidValueException;
 use ManaPHP\Exception\MisuseException;
 use ManaPHP\Exception\NotSupportedException;
+use ReflectionClass;
 
-/**
- * @property-read \ManaPHP\AliasInterface           $alias
- * @property-read \ManaPHP\Http\DispatcherInterface $dispatcher
- * @property-read \ManaPHP\Http\RouterInterface     $router
- * @property-read \ManaPHP\Http\RequestInterface    $request
- * @property-read \ManaPHP\Http\ResponseInterface   $response
- * @property-read \ManaPHP\Event\ManagerInterface   $eventsManager
- * @property-read \ManaPHP\Loader                   $loader
- * @property-read \ManaPHP\Logging\LoggerInterface  $logger
- * @property-read \ManaPHP\Configuration\Configure  $configure
- */
-class Di implements DiInterface
+class Container implements ContainerInterface
 {
     /**
      * @var array
      */
-    protected $_definitions = [];
+    protected $definitions = [];
 
     /**
      * @var array
      */
-    protected $_instances = [];
+    protected $instances = [];
 
     /**
-     * First DI build
-     *
-     * @var \ManaPHP\Di
+     * @var \ManaPHP\Di\ContainerInterface
      */
-    protected static $_default;
+    protected static $default;
 
     public function __construct()
     {
-        if (self::$_default === null) {
-            self::$_default = $this;
+        if (self::$default === null) {
+            self::$default = $this;
         }
     }
 
     /**
-     * Return the First DI created
-     *
      * @return static
      */
     public static function getDefault()
     {
-        return self::$_default;
+        return self::$default;
     }
 
     /**
@@ -61,10 +46,10 @@ class Di implements DiInterface
      *
      * @return string
      */
-    protected function _completeClassName($name, $className)
+    protected function completeClassName($name, $className)
     {
-        if (isset($this->_definitions[$name])) {
-            $definition = $this->_definitions[$name];
+        if (isset($this->definitions[$name])) {
+            $definition = $this->definitions[$name];
         } else {
             return $className;
         }
@@ -91,32 +76,32 @@ class Di implements DiInterface
      *
      * @return string
      */
-    protected function _inferClassName($name)
+    protected function inferClassName($name)
     {
         $definition = null;
-        if (isset($this->_definitions[$name])) {
-            $definition = $this->_definitions[$name];
+        if (isset($this->definitions[$name])) {
+            $definition = $this->definitions[$name];
         } elseif (str_contains($name, '\\')) {
             $definition = $name;
         } elseif ($pos = strrpos($name, '_')) {
             $maybe = substr($name, $pos + 1);
-            if (isset($this->_definitions[$maybe])) {
-                $definition = $this->_definitions[$maybe];
+            if (isset($this->definitions[$maybe])) {
+                $definition = $this->definitions[$maybe];
             } elseif ($pos = strpos($name, '_')) {
                 $maybe = substr($name, 0, $pos);
-                if (isset($this->_definitions[$maybe])) {
-                    $definition = $this->_definitions[$maybe];
+                if (isset($this->definitions[$maybe])) {
+                    $definition = $this->definitions[$maybe];
                 }
             }
         } elseif (preg_match('#^(.+)([A-Z].+?)$#', $name, $match)) {
             $maybe = lcfirst($match[2]);
-            $definition = $this->_definitions[$maybe] ?? null;
+            $definition = $this->definitions[$maybe] ?? null;
         }
 
         if ($definition === null) {
             throw new InvalidValueException(['`%s` definition is invalid: missing class field', $name]);
         } elseif (is_string($definition)) {
-            return $definition[0] === '@' ? $this->_inferClassName(substr($definition, 1)) : $definition;
+            return $definition[0] === '@' ? $this->inferClassName(substr($definition, 1)) : $definition;
         } else {
             return $definition['class'];
         }
@@ -134,24 +119,24 @@ class Di implements DiInterface
     {
         if (is_string($definition)) {
             if (str_contains($definition, '/') || preg_match('#^[\w\\\\]+$#', $definition) !== 1) {
-                $definition = ['class' => $this->_inferClassName($name), $definition, 'shared' => false];
+                $definition = ['class' => $this->inferClassName($name), $definition, 'shared' => false];
             } else {
                 if (!str_contains($definition, '\\')) {
-                    $definition = $this->_completeClassName($name, $definition);
+                    $definition = $this->completeClassName($name, $definition);
                 }
                 $definition = ['class' => $definition, 'shared' => false];
             }
         } elseif (is_array($definition)) {
             if (isset($definition['class'])) {
                 if (!str_contains($definition['class'], '\\')) {
-                    $definition['class'] = $this->_completeClassName($name, $definition['class']);
+                    $definition['class'] = $this->completeClassName($name, $definition['class']);
                 }
             } elseif (isset($definition[0]) && count($definition) !== 1) {
                 if (!str_contains($definition[0], '\\')) {
-                    $definition[0] = $this->_completeClassName($name, $definition[0]);
+                    $definition[0] = $this->completeClassName($name, $definition[0]);
                 }
             } else {
-                $definition['class'] = $this->_inferClassName($name);
+                $definition['class'] = $this->inferClassName($name);
             }
 
             $definition['shared'] = false;
@@ -161,7 +146,7 @@ class Di implements DiInterface
             throw new NotSupportedException(['`:definition` definition is unknown', 'definition' => $name]);
         }
 
-        $this->_definitions[$name] = $definition;
+        $this->definitions[$name] = $definition;
 
         return $this;
     }
@@ -176,7 +161,7 @@ class Di implements DiInterface
      */
     public function setShared($name, $definition)
     {
-        if (isset($this->_instances[$name])) {
+        if (isset($this->instances[$name])) {
             throw new MisuseException(['it\'s too late to setShared(): `%s` instance has been created', $name]);
         }
 
@@ -184,31 +169,31 @@ class Di implements DiInterface
             if ($definition[0] === '@') {
                 null;
             } elseif (str_contains($definition, '/') || preg_match('#^[\w\\\\]+$#', $definition) !== 1) {
-                $definition = ['class' => $this->_inferClassName($name), $definition];
+                $definition = ['class' => $this->inferClassName($name), $definition];
             } elseif (!str_contains($definition, '\\')) {
-                $definition = $this->_completeClassName($name, $definition);
+                $definition = $this->completeClassName($name, $definition);
             }
         } elseif (is_array($definition)) {
             if (isset($definition['class'])) {
                 if (!str_contains($definition['class'], '\\')) {
-                    $definition['class'] = $this->_completeClassName($name, $definition['class']);
+                    $definition['class'] = $this->completeClassName($name, $definition['class']);
                 }
             } elseif (isset($definition[0]) && count($definition) !== 1) {
                 if (!str_contains($definition[0], '\\')) {
-                    $definition[0] = $this->_completeClassName($name, $definition[0]);
+                    $definition[0] = $this->completeClassName($name, $definition[0]);
                 }
             } else {
-                $definition['class'] = $this->_inferClassName($name);
+                $definition['class'] = $this->inferClassName($name);
             }
         } elseif ($definition instanceof Closure) {
             null;
         } elseif (is_object($definition)) {
-            $this->_instances[$name] = $definition;
+            $this->instances[$name] = $definition;
         } else {
             throw new NotSupportedException(['`:definition` definition is unknown', 'definition' => $name]);
         }
 
-        $this->_definitions[$name] = $definition;
+        $this->definitions[$name] = $definition;
 
         return $this;
     }
@@ -222,7 +207,7 @@ class Di implements DiInterface
      */
     public function remove($name)
     {
-        unset($this->_definitions[$name], $this->_instances[$name], $this->{$name});
+        unset($this->definitions[$name], $this->instances[$name], $this->{$name});
 
         return $this;
     }
@@ -235,16 +220,16 @@ class Di implements DiInterface
      *
      * @return mixed
      */
-    public function get($name, $parameters = [])
+    public function getNew($name, $parameters = [])
     {
-        $definition = $this->_definitions[$name] ?? $name;
+        $definition = $this->definitions[$name] ?? $name;
 
         if ($parameters && !isset($parameters[0])) {
             $parameters = [$parameters];
         }
 
         if (is_string($definition)) {
-            $instance = new $definition(...$parameters);
+            return $this->createNew($name, $definition, $parameters, false);
         } elseif ($definition instanceof Closure) {
             $instance = $definition(...$parameters);
         } elseif (is_object($definition)) {
@@ -254,10 +239,69 @@ class Di implements DiInterface
         }
 
         if ($instance instanceof Injectable) {
-            $instance->inject('di', $this);
+            $instance->setContainer($this);
         }
 
         return $instance;
+    }
+
+    /**
+     * @param string $name
+     * @param mixed  $instance
+     *
+     * @return mixed
+     */
+    protected function setSharedInternal($name, $instance)
+    {
+        $this->instances[$name] = $instance;
+
+        return $instance;
+    }
+
+    /**
+     * @param string $name
+     * @param string $class
+     * @param array  $parameters
+     * @param bool   $shared
+     *
+     * @return mixed
+     */
+    protected function createNew($name, $class, $parameters, $shared)
+    {
+        if (!class_exists($class)) {
+            throw new InvalidValueException(
+                ['`%s` component cannot be resolved: `%s` class is not exists', $name, $class]
+            );
+        }
+
+        if (method_exists($class, '__construct')) {
+            $rc = new ReflectionClass($class);
+
+            $instance = $rc->newInstanceWithoutConstructor();
+
+            if ($shared) {
+                $resolved = $this->setSharedInternal($name, $instance);
+            }
+
+            if ($instance instanceof Injectable) {
+                $instance->setContainer($this, $resolved ?? $instance);
+            }
+
+            /** @noinspection PhpPossiblePolymorphicInvocationInspection */
+            $instance->__construct(...$parameters);
+        } else {
+            $instance = new $class(...$parameters);
+
+            if ($shared) {
+                $resolved = $this->setSharedInternal($name, $instance);
+            }
+
+            if ($instance instanceof Injectable) {
+                $instance->setContainer($this, $resolved ?? $instance);
+            }
+        }
+
+        return $shared ? $resolved : $instance;
     }
 
     /**
@@ -270,19 +314,24 @@ class Di implements DiInterface
      */
     public function getShared($name)
     {
-        if ($instance = $this->_instances[$name] ?? null) {
+        if ($instance = $this->instances[$name] ?? null) {
             return $instance;
         }
 
-        $definition = $this->_definitions[$name] ?? $name;
+        $definition = $this->definitions[$name] ?? $name;
 
         if (is_string($definition)) {
             if ($definition[0] === '@') {
-                return $this->_instances[$name] = $this->getShared(substr($definition, 1));
+                return $this->setSharedInternal($name, $this->getShared(substr($definition, 1)));
             }
             $parameters = [];
         } elseif ($definition instanceof Closure) {
-            return $definition();
+            $instance = $definition();
+            if ($instance instanceof Injectable) {
+                $instance->setContainer($this);
+            }
+
+            return $this->setSharedInternal($name, $instance);
         } elseif (isset($definition['class'])) {
             $parameters = $definition;
             $definition = $definition['class'];
@@ -299,24 +348,13 @@ class Di implements DiInterface
             $parameters = [$parameters];
         }
 
-        if (is_string($definition)) {
-            $definition = $this->_definitions[$definition] ?? $definition;
-
-            if (!class_exists($definition)) {
-                throw new InvalidValueException(
-                    ['`%s` component cannot be resolved: `%s` class is not exists', $name, $definition]
-                );
-            }
-            $instance = new $definition(...$parameters);
-        } else {
+        if (!is_string($definition)) {
             throw new NotSupportedException(['`%s` component implement type is not supported', $name]);
         }
 
-        if ($instance instanceof Injectable) {
-            $instance->inject('di', $this);
-        }
+        $definition = $this->definitions[$definition] ?? $definition;
 
-        return $this->_instances[$name] = $instance;
+        return $this->createNew($name, $definition, $parameters, true);
     }
 
     /**
@@ -327,10 +365,10 @@ class Di implements DiInterface
     public function getDefinitions($pattern = null)
     {
         if ($pattern === null) {
-            return $this->_definitions;
+            return $this->definitions;
         } else {
             $definitions = [];
-            foreach ($this->_definitions as $name => $definition) {
+            foreach ($this->definitions as $name => $definition) {
                 if (fnmatch($pattern, $name)) {
                     $definitions[$name] = $definition;
                 }
@@ -346,7 +384,7 @@ class Di implements DiInterface
      */
     public function getDefinition($name)
     {
-        return $this->_definitions[$name] ?? null;
+        return $this->definitions[$name] ?? null;
     }
 
     /**
@@ -354,42 +392,7 @@ class Di implements DiInterface
      */
     public function getInstances()
     {
-        return $this->_instances;
-    }
-
-    /**
-     * Magic method __get
-     *
-     * @param string $propertyName
-     *
-     * @return mixed
-     */
-    public function __get($propertyName)
-    {
-        return $this->getShared($propertyName);
-    }
-
-    /**
-     * @param string $name
-     * @param mixed  $value
-     */
-    public function __set($name, $value)
-    {
-        if ($value === null) {
-            $this->remove($name);
-        } else {
-            $this->setShared($name, $value);
-        }
-    }
-
-    /**
-     * @param string $name
-     *
-     * @return bool
-     */
-    public function __isset($name)
-    {
-        return $this->has($name);
+        return $this->instances;
     }
 
     /**
@@ -401,6 +404,6 @@ class Di implements DiInterface
      */
     public function has($name)
     {
-        return isset($this->_definitions[$name]);
+        return isset($this->definitions[$name]);
     }
 }

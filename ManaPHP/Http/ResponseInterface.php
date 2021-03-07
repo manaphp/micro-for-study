@@ -5,11 +5,6 @@ namespace ManaPHP\Http;
 interface ResponseInterface
 {
     /**
-     * @return \ManaPHP\Http\ResponseContext
-     */
-    public function getContext();
-
-    /**
      * Sets a cookie to be sent at the end of the request
      *
      * @param string $name
@@ -44,6 +39,16 @@ interface ResponseInterface
      * @return static
      */
     public function deleteCookie($name, $path = null, $domain = null, $secure = false, $httponly = true);
+
+    /**
+     * @return array
+     */
+    public function getCookies();
+
+    /**
+     * @return bool
+     */
+    public function hasCookies();
 
     /**
      * Sets the HTTP response code
@@ -169,7 +174,7 @@ interface ResponseInterface
     /**
      * Sets HTTP response body
      *
-     * @param string $content
+     * @param mixed $content
      *
      * @return static
      */
@@ -188,7 +193,7 @@ interface ResponseInterface
      *
      * @return static
      */
-    public function setJsonError($message, $code = 1);
+    public function setJsonError($message, $code = null);
 
     /**
      * @param mixed  $data
@@ -217,9 +222,14 @@ interface ResponseInterface
     /**
      * Gets the HTTP response body
      *
-     * @return string
+     * @return mixed
      */
     public function getContent();
+
+    /**
+     * @return bool
+     */
+    public function hasContent();
 
     /**
      * Sets an attached file to be sent at the end of the request
@@ -235,6 +245,11 @@ interface ResponseInterface
      * @return string|null
      */
     public function getFile();
+
+    /**
+     * @return bool
+     */
+    public function hasFile();
 
     /**
      * @param string $attachmentName

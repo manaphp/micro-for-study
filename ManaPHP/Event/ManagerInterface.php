@@ -9,11 +9,11 @@ interface ManagerInterface
      *
      * @param string   $event
      * @param callable $handler
-     * @param bool     $appended
+     * @param int      $priority
      *
      * @return void
      */
-    public function attachEvent($event, $handler, $appended = true);
+    public function attachEvent($event, $handler, $priority = 0);
 
     /**
      * @param string   $event
@@ -30,9 +30,9 @@ interface ManagerInterface
      * @param mixed  $data
      * @param mixed  $source
      *
-     * @return void
+     * @return \ManaPHP\Event\EventArgs
      */
-    public function fireEvent($event, $data = [], $source = null);
+    public function fireEvent($event, $data = null, $source = null);
 
     /**
      * @param string   $group
